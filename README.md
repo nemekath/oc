@@ -72,11 +72,13 @@ Measured against live sites in [only-cli/benchmarks](https://github.com/only-cli
 
 | method | success | total tokens | avg ms |
 | --- | ---: | ---: | ---: |
-| `oc open` | 6/6 | 1,941 | 516 |
-| `oc raw` | 6/6 | 23,762 | 603 |
-| raw HTML fetch | 6/6 | 179,771 | 472 |
+| `oc open` | 6/6 | 1,941 | 548 |
+| `oc raw` | 6/6 | 23,768 | 585 |
+| Jina Reader | 6/6 | 16,344 | 2,024 |
+| `lynx -dump` | 5/6 | 25,138 | 494 |
+| raw HTML fetch | 6/6 | 176,659 | 283 |
 
-Across six real tasks (an article, a news front page, a Reddit discussion, a web search, a GitHub repository search, a LinkedIn company page) the compact view hands the agent 93x fewer tokens than raw HTML at comparable speed. GitHub search went from 67,902 tokens to 441; the LinkedIn page from 39,724 to 470; a Reddit thread from 52,935 to 479. The benchmark repo has per-task numbers, methodology, and instructions for adding other tools and models.
+Across six real tasks (an article, a news front page, a Reddit discussion, a web search, a GitHub repository search, a LinkedIn company page) the compact view hands the agent 8x fewer tokens than the next-best cleaner and 91x fewer than raw HTML, at the lowest latency of anything that cleans the page. GitHub search went from 67,902 tokens to 441; the LinkedIn page from 43,330 to 471; a Reddit thread from 52,936 to 479. It was also the only method to return real content on all six tasks: lynx and the naive fetcher hit a DuckDuckGo challenge, and Reddit served Jina its block page. The benchmark repo has per-task numbers, methodology, and instructions for adding other tools and models.
 
 ## Status
 
