@@ -89,31 +89,31 @@ Measured against live sites in [only-cli/benchmarks](https://github.com/only-cli
 
 The compact view reads all six pages for less than half the tokens of its cheapest rival, a single-screenshot floor, and 92x fewer than raw HTML. The nearest rivals are floors, not full reads: the computer-use rows price a single 1024x768 screenshot, one look at the top of the page, and Browser Use's state message drops most page text. Among methods that deliver the page content, the gap is 8x to Jina Reader and 13x to Playwright MCP's accessibility snapshot. oc was also the only cleaner to return real content on all six tasks: lynx and the naive fetcher hit a DuckDuckGo challenge, and Reddit served Jina its block page. Jina Reader is also the only method in the table that routes browsing through a third party: every URL the agent reads is sent to Jina's servers, while oc talks only to the site itself.
 
-The end-to-end agent benchmark runs Claude Code headless (`claude -p` on `claude-sonnet-5`) on three live tasks, one web tool per session, and reads success, turns, tokens, and cost from its JSON output:
+The end-to-end agent benchmark runs Claude Code headless (`claude -p` on `claude-sonnet-5`) on six live tasks, one web tool per session, and reads success, turns, tokens, and cost from its JSON output. Three tasks read a single page; three start on one page and must follow a link to a second:
 
 | tool | success | turns | total tokens | total cost USD | avg s |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| oc | 3/3 ✅ | 14 | 353,379 | 0.22 ✅ | 12 |
-| `lynx -dump` | 3/3 ✅ | 13 ✅ | 323,725 ✅ | 0.26 | 10 ✅ |
-| raw curl | 2/3 | 23 | 253,776 | 0.14 | 23 |
-| Jina Reader | 3/3 ✅ | 13 ✅ | 361,603 | 0.27 | 14 |
-| Playwright MCP | 3/3 ✅ | 18 | 491,779 | 0.33 | 17 |
+| oc | 6/6 ✅ | 31 | 871,909 | 0.74 | 13 ✅ |
+| `lynx -dump` | 6/6 ✅ | 29 ✅ | 772,831 ✅ | 0.55 ✅ | 14 |
+| raw curl | 4/6 | 61 | 1,031,894 | 0.54 | 39 |
+| Jina Reader | 6/6 ✅ | 30 | 855,243 | 0.72 | 19 |
+| Playwright MCP | 6/6 ✅ | 48 | 1,575,695 | 1.22 | 29 |
 
 The ✅ marks the best value per column among tools that finished every task.
 
-Every token claude billed per tool across the three tasks, failed runs included:
+Every token claude billed per tool across the six tasks, failed runs included:
 
 ```
-oc             ######################                     353,379 tokens  14 turns
-raw-curl       ########################################   651,102 tokens  23 turns  1 failed
-lynx           ####################                       323,725 tokens  13 turns
-jina-reader    ######################                     361,603 tokens  13 turns
-playwright-mcp ##############################             491,779 tokens  18 turns
+oc             ###################                        871,909 tokens  31 turns
+raw-curl       ########################################  1,855,550 tokens  61 turns  2 failed
+lynx           #################                          772,831 tokens  29 turns
+jina-reader    ##################                         855,243 tokens  30 turns
+playwright-mcp ##################################        1,575,695 tokens  48 turns
 ```
 
-Each session gets a skill documenting its tool, so every condition runs at its best. oc finished all three tasks at the lowest cost of any full-success condition, and oc and lynx were the only tools whose answers were real content on every task: Jina Reader and Playwright MCP answered the Reddit task by reporting that Reddit blocks them, while raw curl burned its whole 13-turn budget there, roughly 400k tokens and twenty cents, and returned nothing. Totals include Claude Code's own per-session overhead, so compare rows, not absolutes. The benchmark repo has per-task numbers, methodology, and instructions for adding other tools and models.
+Each session gets a skill documenting its tool, so every condition runs at its best. Two results are worth stating plainly. oc and lynx were the only tools that returned real content on every task: Reddit served Jina Reader and Playwright MCP a 403, so both "answered" that task by reporting the block, and raw curl burned its full turn budget there and on the GitHub search, roughly 400k tokens each, and returned nothing. But lynx, not oc, took the token and cost columns this round, and the reason is a missing feature. The compact view leaves link URLs out to save tokens, and `oc do <n>` does not ship until v0.2, so an agent following a link has to re-fetch the page as `oc open --json` or `oc raw` just to learn where `[15]` points, while `lynx -dump` prints a references list for free. That tax is most of the gap on the multi-step tasks. Activatable numbered actions are the fix and the point of v0.2.
 
-The same three tasks through OpenAI's Codex CLI (`codex exec` on gpt-5.6-sol) tell the same story with sharper edges: oc finished 3/3 on 110,551 tokens and 8 tool calls, while raw curl needed 46 tool calls and 978,663 tokens, 872k of them ground out on the Reddit task alone, and Jina Reader and Playwright MCP again answered Reddit by reporting the block. Codex's session overhead is much smaller than Claude Code's, so its totals are not comparable to the rows above; the full codex table is in the benchmark repo.
+The same six tasks run through OpenAI's Codex CLI (`codex exec`) as well; totals there are much smaller because Codex's per-session overhead is, so the two agents are compared within their own tables. The benchmark repo has per-task numbers, per-tier breakdowns, methodology, and instructions for adding other tools and models.
 
 ## Status
 
