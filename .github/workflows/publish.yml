@@ -67,4 +67,7 @@ jobs:
             npm version --no-git-tag-version "${V%%-*}-dev.${{ github.run_number }}"
           fi
           echo "CHANNEL=$CHANNEL" >> "$GITHUB_ENV"
-      - run: npm publish --access public --tag "$CHANNEL"
+      - run: |
+          npm --version
+          echo "OIDC request url present: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}"
+          npm publish --access public --tag "$CHANNEL" --loglevel http
