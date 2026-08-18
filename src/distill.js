@@ -3,7 +3,7 @@ import TurndownService from 'turndown';
 
 /**
  * @typedef {Object} Block
- * @property {'heading'|'text'|'link'|'input'|'button'} type
+ * @property {'heading'|'text'|'link'|'input'|'button'|'divider'} type
  * @property {string} text
  * @property {number} [n] - action handle
  * @property {number} [level] - heading level 1..6
@@ -28,6 +28,34 @@ const DROP = new Set([
   'link', 'meta', 'head', 'canvas', 'video', 'audio', 'object',
 ]);
 
+// Elements that are furniture by definition. The main content is never one of
+// them, so the search below refuses to descend into them.
+const FURNITURE = new Set(['nav', 'header', 'footer', 'aside']);
+
+// Selectors a page uses to say where its content is. One match is a claim
+// worth believing; several <article> elements mean a listing, where the list
+// is the content and taking the first would throw the rest away.
+const MAIN_SELECTORS = ['main', '[role="main"]', 'article'];
+
+// Reordering only matters on a page that cannot be printed whole: if the
+// budget covers everything, what leads is a question with no consequences.
+// Below this much text the page is left in document order.
+const MIN_PAGE = 3000;
+// A candidate has to hold this share of the page's prose to be believed.
+const MIN_SHARE = 0.25;
+// How much of its parent's prose a child must hold before the search moves
+// down into it, and how much of the page's it must keep to be worth choosing.
+const DESCEND_SHARE = 0.6;
+const KEEP_SHARE = 0.5;
+const MAX_DEPTH = 12;
+
+// A short link label repeated this many times down a page is per-item
+// furniture (permalink, embed, save, reply, hide) rather than content. On a
+// forum thread there is one set per comment, which costs more than the
+// comments do.
+const REPEAT_LIMIT = 5;
+const REPEAT_MAX_LEN = 25;
+
 const clean = (s) => s.replace(/\s+/g, ' ').trim();
 
 /**
@@ -50,6 +78,9 @@ export function distill(html, url = '') {
     el.getAttribute('aria-hidden') === 'true' ||
     /display:\s*none/.test(el.getAttribute('style') ?? '');
 
+  /** Subtree already emitted, skipped when the rest of the page is walked. */
+  let done = null;
+
   const walk = (node) => {
     if (node.nodeType === 3) {
       const text = clean(node.textContent);
@@ -57,6 +88,7 @@ export function distill(html, url = '') {
       return;
     }
     if (node.nodeType !== 1) return;
+    if (node === done) return;
     const tag = node.localName;
     if (DROP.has(tag) || hidden(node)) return;
 
@@ -92,8 +124,111 @@ export function distill(html, url = '') {
   };
 
   const body = bodyOf(document);
-  if (body) walk(body);
-  return { url, title, blocks: number(mergeText(blocks)) };
+  const main = body ? mainOf(document, body) : null;
+  if (main) {
+    // Content first, everything else after it. The budget in render.js is
+    // spent top down, so whatever leads the list is what an agent gets for
+    // its first 500 tokens, and on most pages the top of the document is
+    // menus. Nothing is dropped: the chrome carries links `oc do` needs, it
+    // just stops being the thing that gets read.
+    walk(main);
+    done = main;
+    const contentBlocks = blocks.length;
+    if (body) walk(body);
+    if (blocks.length > contentBlocks) {
+      blocks.splice(contentBlocks, 0, { type: 'divider', text: '--- rest of page: navigation, sidebar, footer ---' });
+    }
+  } else if (body) {
+    walk(body);
+  }
+  return { url, title, blocks: number(mergeText(dropRepeats(blocks))) };
+}
+
+/**
+ * Remove link labels that repeat down the page. They are the per-item controls
+ * a template stamps onto every row, and on a long thread they outweigh the
+ * content. What went is stated in place, because a view that quietly drops
+ * things is a view an agent cannot trust.
+ * @param {Block[]} blocks
+ * @returns {Block[]}
+ */
+function dropRepeats(blocks) {
+  /** @type {Map<string, number>} */
+  const counts = new Map();
+  for (const b of blocks) {
+    if (b.type !== 'link' || b.text.length > REPEAT_MAX_LEN) continue;
+    const key = b.text.toLowerCase();
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const repeated = new Set([...counts].filter(([, n]) => n >= REPEAT_LIMIT).map(([k]) => k));
+  if (!repeated.size) return blocks;
+  const kept = blocks.filter((b) => !(b.type === 'link' && repeated.has(b.text.toLowerCase())));
+  const gone = blocks.length - kept.length;
+  const names = [...repeated].slice(0, 3).join(', ');
+  const note = { type: 'divider', text: `--- ${gone} repeated links hidden (${names}), 'oc raw' has them ---` };
+  // The note belongs with the content it was cut from, not after the chrome.
+  const boundary = kept.findIndex((b) => b.type === 'divider');
+  kept.splice(boundary === -1 ? kept.length : boundary, 0, note);
+  return kept;
+}
+
+/**
+ * Find the element holding the page's main content, or null when the page is
+ * too small or too flat for the question to have an answer.
+ * @param {any} document
+ * @param {any} body
+ * @returns {any}
+ */
+function mainOf(document, body) {
+  if (clean(body.textContent ?? '').length < MIN_PAGE) return null;
+  const total = prose(body);
+  for (const selector of MAIN_SELECTORS) {
+    const found = [...document.querySelectorAll(selector)];
+    if (found.length !== 1) continue;
+    const el = found[0];
+    if (el !== body && prose(el) >= total * MIN_SHARE) return el;
+  }
+  return densest(body, total);
+}
+
+/**
+ * Walk down the tree while one child holds most of the prose of the element
+ * above it. That is what separates a content column from the page around it
+ * without knowing anything about the site.
+ * @param {any} body
+ * @param {number} total
+ * @returns {any}
+ */
+function densest(body, total) {
+  let node = body;
+  for (let depth = 0; depth < MAX_DEPTH; depth++) {
+    let best = null;
+    let bestProse = 0;
+    for (const child of node.children ?? []) {
+      if (FURNITURE.has(child.localName) || DROP.has(child.localName)) continue;
+      const len = prose(child);
+      if (len > bestProse) {
+        best = child;
+        bestProse = len;
+      }
+    }
+    if (!best || bestProse < prose(node) * DESCEND_SHARE || bestProse < total * KEEP_SHARE) break;
+    node = best;
+  }
+  return node === body ? null : node;
+}
+
+/**
+ * Text length minus link text. Link text is what navigation is made of, so
+ * subtracting it is what keeps a menu from outscoring an article.
+ * @param {any} el
+ * @returns {number}
+ */
+function prose(el) {
+  const text = clean(el.textContent ?? '').length;
+  let links = 0;
+  for (const a of el.querySelectorAll?.('a') ?? []) links += clean(a.textContent ?? '').length;
+  return text - links;
 }
 
 /**
@@ -107,6 +242,7 @@ export function distill(html, url = '') {
 function number(blocks) {
   let handle = 0;
   for (const block of blocks) {
+    if (block.type === 'divider') continue;
     if (block.type !== 'text' || block.text.length > TEXT_CAP) block.n = ++handle;
   }
   return blocks;

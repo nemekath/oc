@@ -7,6 +7,8 @@ import { render, estimateTokens } from '../src/render.js';
 const html = readFileSync(new URL('./pages/news.html', import.meta.url), 'utf8');
 const page = () => distill(html, 'https://example.test/news');
 const feed = readFileSync(new URL('./pages/feed.xml', import.meta.url), 'utf8');
+const forum = readFileSync(new URL('./pages/forum.html', import.meta.url), 'utf8');
+const thread = () => distill(forum, 'https://example.test/t/1');
 
 test('noise never reaches the output, compact or raw', () => {
   for (const out of [render(page(), { budget: 5000 }).text, toMarkdown(html), toHTML(html)]) {
@@ -135,6 +137,44 @@ test('rss with cdata bodies converts too, ordinary html does not', () => {
   const text = p.blocks.map((b) => b.text).join(' ');
   assert.ok(text.includes('A cdata body with markup.'), 'cdata body missing');
   assert.equal(feedToHTML(html), null, 'ordinary html misread as a feed');
+});
+
+test('the content leads the page and the chrome follows it', () => {
+  const { text } = render(thread(), { budget: 500 });
+  const lines = text.split('\n');
+  // The budget is spent top down, so what matters is that comments are inside
+  // the first view at all: on this page they used to start below it.
+  assert.ok(text.includes('Lynx is the one I keep coming back to'), `content missed the first view:\n${text}`);
+  assert.ok(!text.includes('section 7'), 'nav still printed ahead of the content');
+  const blocks = thread().blocks;
+  const divider = blocks.findIndex((b) => b.type === 'divider' && b.text.includes('rest of page'));
+  const nav = blocks.findIndex((b) => b.text === 'section 7');
+  assert.ok(divider > 0 && nav > divider, 'the nav was not moved below the content');
+  assert.ok(lines[1].startsWith('# '), 'the first line under the title is not the content heading');
+});
+
+test('nothing is dropped when the content is moved up, only reordered', () => {
+  const blocks = thread().blocks;
+  const text = blocks.map((b) => b.text).join(' ');
+  assert.ok(text.includes('section 13'), 'a nav link went missing');
+  assert.ok(text.includes('terms'), 'a footer link went missing');
+  assert.ok(text.includes('This sidebar exists on every page'), 'sidebar text went missing');
+});
+
+test('per item links that repeat down a page are dropped, and say so', () => {
+  const blocks = thread().blocks;
+  assert.ok(!blocks.some((b) => b.type === 'link' && b.text === 'permalink'), 'per comment chrome survived');
+  assert.ok(blocks.some((b) => b.type === 'link' && b.text === 'commenter3'), 'a unique link was dropped with them');
+  const note = blocks.find((b) => b.type === 'divider' && b.text.includes('repeated links hidden'));
+  assert.ok(note, 'links vanished with nothing said about it');
+  assert.ok(note.text.includes("'oc raw' has them"), 'the note does not say how to get them back');
+  assert.ok(toMarkdown(forum).includes('permalink'), 'raw lost them too, so the note lies');
+});
+
+test('a page that fits the budget is left in document order', () => {
+  const blocks = page().blocks;
+  assert.ok(!blocks.some((b) => b.type === 'divider'), 'a small page was reordered for no reason');
+  assert.equal(blocks[0].text, 'Fixture News');
 });
 
 test('long runs of short links collapse into a range marker', () => {

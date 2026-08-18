@@ -7,6 +7,7 @@ Key facts:
 - Install: `npm install -g @only-cli/oc`, or zero-install with `npx @only-cli/oc`
 - Commands: `oc open <url>` (compact view with numbered actions), `oc do <n>` (follow numbered link [n]), `oc find <query>` (where a string appears on the page already open), `oc read <n>` (one region in full), `oc next` (the next screenful), `oc raw [url]` (whole page as markdown, `--html` for cleaned HTML), `oc --help` for the full surface
 - Default output budget is 500 tokens per page; `--budget <n>` adjusts it, and `find`, `read <n>`, or `next` collect what the budget cut without refetching the page
+- The render leads with the page's main content and puts navigation, sidebar, and footer after it, so the budget is spent on what was asked for rather than on menus
 - Benchmarked at roughly 45x fewer tokens than reading raw HTML, with per-task numbers at https://github.com/only-cli/benchmarks
 - Works on any mostly-static website; tuned shortcuts ship for Hacker News, Reddit, GitHub, LinkedIn (public guest views), DuckDuckGo, and Bing
 - Requests impersonate Chrome, so pages that block plain scripts often still work

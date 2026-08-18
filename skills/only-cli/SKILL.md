@@ -20,7 +20,7 @@ npx @only-cli/oc raw [url]      whole page as markdown (add --html for cleaned H
 
 ## Reading the output
 
-- The first line is the page title, then headings, text, and interactive elements in page order.
+- The first line is the page title, then the page's main content: the article, the comment thread, the results. Navigation, sidebar, and footer come after it, under a `--- rest of page ---` line, still numbered and still followable with `do <n>`.
 - `[n]` marks a link, button, input, heading, or a text block long enough to be cut.
 - `... +820 chars` at the end of a line means that block was cut there. `read <n>` prints it whole.
 - `... 164 more blocks (~7,100 tokens)` means the page ran past the budget. That is the price of the rest, so you can decide before paying.
@@ -35,13 +35,13 @@ Four ways to go past the first view, cheapest first. Pick by what you need, not 
 - `oc next` prints the next budget worth of the same page and remembers where it stopped, so calling it again continues. Use it when you are reading rather than looking something up.
 - `oc raw` (no URL needed once a page is open) prints everything. It costs an order of magnitude more, so use it when you genuinely need the whole page.
 
-Measured on one Reddit thread: `open` 475 tokens, one `find` 115, one `read` 88, each `next` about 455, `raw` 9,670. None of them fetches anything; they all work from the page `open` already saved.
+Measured on one Reddit thread: `open` 436 tokens, one `find` 142, one `read` 143, each `next` about 450, `raw` 9,636. None of them fetches anything; they all work from the page `open` already saved.
 
 ```
 oc open https://old.reddit.com/r/linuxquestions/comments/xpznb1/best_terminal_web_browser/
-oc find w3m                     -> 7 matches with their numbers, 115 tokens
-oc read 245                     -> that comment in full, 88 tokens
-oc next                         -> keep reading, 455 tokens at a time
+oc find w3m                     -> 7 matches with their numbers, 142 tokens
+oc read 23                      -> that comment in full, 143 tokens
+oc next                         -> keep reading, 450 tokens at a time
 ```
 
 `find` matches the query as a phrase, case insensitive, and falls back to matching the words separately when the phrase is not there. It says how many matches it held back if they did not fit the budget.

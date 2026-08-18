@@ -136,6 +136,8 @@ export function formatBlock(b, { full = false } = {}) {
       return `${tag}button "${full ? b.text : truncate(b.text)}"`;
     case 'input':
       return `${tag}input ${b.name} (${b.text})`;
+    case 'divider':
+      return b.text;
     default:
       return full ? `${tag}${b.text}` : `${tag}${truncate(b.text)}`;
   }

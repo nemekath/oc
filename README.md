@@ -56,6 +56,26 @@ Flags: `--budget <tokens>` (default 500, 2000 for `read`), `--json`, `--html` (r
 
 `oc open` remembers the page it rendered, so `oc do 3` follows `[3]` without the agent ever handling a URL. That state is a JSON file per session under `~/.only-cli` (override the directory with `OC_HOME`); there is no daemon and no background browser. Links that search engines wrap in a tracking redirect resolve to the real destination, so `do` on a result works like a click.
 
+### What goes first
+
+A budget only helps if it is spent on the part of the page someone asked for. Most pages open with menus, so the render puts the main content first and everything else after it:
+
+```
+# Best Terminal Web Browser : linuxquestions
+[3] Best Terminal Web Browser
+IYO What's The Best Terminal Web Browser?
+[17] Xendarq
+46 points 3 years ago
+You mean there's a terminal web browser other than lynx??! Who knew!
+...
+--- 348 repeated links hidden (save, report, [-]), 'oc raw' has them ---
+--- rest of page: navigation, sidebar, footer ---
+```
+
+The content is found by following the page's own markup (`main`, `role="main"`, a single `article`) and falling back to the densest run of prose when a page says nothing. Nothing is dropped: nav and sidebar links still carry numbers `oc do` can follow, they just stop being what the budget buys. Link labels that repeat down a page are the exception, because a forum thread stamps permalink, save, and report onto every comment, and on a long thread those cost more than the comments do. They are removed and the count says so.
+
+Pages small enough to print whole are left in document order, since nothing is competing for the budget there.
+
 ### Reading past the budget
 
 A 500 token view of a long page is cheap on the first read and expensive on the second, if the only way to see more is the whole page again. So the view says what it left behind, and there are three ways to collect it that are not the whole page:
@@ -63,14 +83,14 @@ A 500 token view of a long page is cheap on the first read and expensive on the 
 ```
 $ oc open https://old.reddit.com/r/linuxquestions/comments/xpznb1/best_terminal_web_browser/
 ...
-[80] Kind of a weird question, but does anyone here use a terminal browser to ... +312 chars
-... 570 more blocks (~4,362 tokens): 'oc next' for the next ~500, 'oc raw' for all
+[26] Lynx because it's the only one I'm aware of. These days the web is ... +53 chars
+... 168 more blocks (~2,478 tokens): 'oc next' for the next ~500, 'oc raw' for all
 actions: do <n> | read <n> | next | raw
 
-$ oc find w3m   # 7 matches with the number to read each by, 115 tokens
-$ oc read 245   # that one comment in full, 88 tokens
-$ oc next       # the next ~455 tokens, continuing exactly where the view stopped
-$ oc raw        # the whole thread, 9,670 tokens
+$ oc find w3m   # 7 matches with the number to read each by, 142 tokens
+$ oc read 23    # that comment in full, 143 tokens
+$ oc next       # the next ~450 tokens, continuing exactly where the view stopped
+$ oc raw        # the whole thread, 9,636 tokens
 ```
 
 None of the three fetches anything: `open` saves the distilled page, so working through it afterwards costs one file read. `find` matches as a phrase, case insensitive, and falls back to the words separately when the phrase is absent. `read <n>` takes one region, which is the block at `[n]` with the couple of blocks that lead into it, or the whole section when `[n]` is a heading. Headings and text blocks long enough to be cut get numbers for exactly this reason, and `... +312 chars` on a line is how much of that block the view did not print.
