@@ -35,7 +35,7 @@ const clean = (s) => s.replace(/\s+/g, ' ').trim();
  * @returns {Page}
  */
 export function distill(html, url = '') {
-  const { document } = parseHTML(html);
+  const { document } = parseHTML(feedToHTML(html) ?? html);
   const title = clean(document.querySelector('title')?.textContent ?? '');
   /** @type {Block[]} */
   const blocks = [];
@@ -107,7 +107,7 @@ const bodyOf = (document) => document.querySelector('body') ?? document.document
  * @param {string} html
  */
 function cleanDocument(html) {
-  const { document } = parseHTML(html);
+  const { document } = parseHTML(feedToHTML(html) ?? html);
   for (const tag of DROP) {
     for (const el of [...document.querySelectorAll(tag)]) el.remove();
   }
@@ -143,6 +143,56 @@ export function toHTML(html) {
   const document = cleanDocument(html);
   const el = bodyOf(document);
   return el ? el.innerHTML.trim() : '';
+}
+
+/**
+ * Sites behind hard bot challenges often leave their Atom or RSS feeds open:
+ * Stack Overflow challenges every HTML page but publishes full question and
+ * answer bodies under /feeds. A feed is XML with the real content escaped
+ * inside each entry, so this converts one into a plain HTML document and
+ * everything downstream stays unchanged. Returns null for non-feed input.
+ * @param {string} text
+ * @returns {string | null}
+ */
+export function feedToHTML(text) {
+  const head = text.slice(0, 2000);
+  if (!/<(feed|rss)[\s>]/i.test(head) || /<(html|body)[\s>]/i.test(head)) return null;
+  // RSS wraps bodies in CDATA, which an HTML parser reads as a comment and
+  // drops. Escaping the section turns it into ordinary text, the same shape
+  // Atom feeds already use.
+  const xml = text.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (_, inner) =>
+    inner.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'));
+  const { document } = parseHTML(xml);
+  const root = document.querySelector('feed, rss');
+  if (!root) return null;
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  // Feed elements are unknown to the HTML parser, so self-closed ones like
+  // <category /> stay open and swallow their siblings. Descendant queries
+  // still land, because a closing </entry> or </item> pops the whole pile.
+  const field = (el, sel) => clean(el.querySelector(sel)?.textContent ?? '');
+  const feedTitle = field(root, 'title');
+  const parts = [];
+  for (const entry of root.querySelectorAll('entry, item')) {
+    const title = field(entry, 'title');
+    const href = entry.querySelector('link[rel="alternate"]')?.getAttribute('href')
+      ?? entry.querySelector('link[href]')?.getAttribute('href')
+      ?? field(entry, 'guid');
+    const author = field(entry, 'author name') || field(entry, 'author');
+    const date = (field(entry, 'updated') || field(entry, 'published') || field(entry, 'pubdate')).slice(0, 10);
+    const byline = [author && `by ${author}`, date].filter(Boolean).join(', ');
+    // Atom escapes the entry body, so textContent of content/summary is the
+    // HTML itself, ready to be embedded and parsed like any page.
+    const body = (entry.querySelector('content') ?? entry.querySelector('summary') ?? entry.querySelector('description'))?.textContent ?? '';
+    parts.push('<article>');
+    if (title) parts.push(`<h2>${esc(title)}</h2>`);
+    if (byline || href) {
+      parts.push(`<p>${esc(byline)}${href ? ` <a href="${esc(href)}">open</a>` : ''}</p>`);
+    }
+    parts.push(body, '</article>');
+  }
+  // A full skeleton, because linkedom treats the first element of a bare
+  // multi-rooted fragment as the whole document and drops its siblings.
+  return `<html><head><title>${esc(feedTitle)}</title></head><body>\n${parts.join('\n')}\n</body></html>`;
 }
 
 /**

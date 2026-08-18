@@ -1,0 +1,9 @@
+{
+  "domain": "stackoverflow.com",
+  "commands": {
+    "question": { "open": "https://stackoverflow.com/feeds/question/{id}", "args": ["id"] },
+    "tag": { "open": "https://stackoverflow.com/feeds/tag?tagnames={name}&sort=newest", "args": ["name"] },
+    "user": { "open": "https://stackoverflow.com/feeds/user/{id}", "args": ["id"] },
+    "recent": { "open": "https://stackoverflow.com/feeds" }
+  }
+}

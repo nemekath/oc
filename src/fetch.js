@@ -61,7 +61,7 @@ async function viaFetch(target) {
     throw new Error(`fetch failed: ${res.status} ${res.statusText} for ${target}`);
   }
   const type = res.headers.get('content-type') ?? '';
-  if (type && !type.includes('html')) {
+  if (type && !type.includes('html') && !type.includes('xml')) {
     throw new Error(`not an HTML page (${type.split(';')[0]}), nothing to distill`);
   }
   return { url: res.url, html: await res.text(), status: res.status, via: 'fetch' };
