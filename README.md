@@ -68,15 +68,15 @@ Not supported yet: pages that only render with JavaScript (a headless fallback i
 
 ## Benchmarks
 
-Measured against live sites in [only-cli/benchmarks](https://github.com/only-cli/benchmarks) (only-cli 0.1.0, 2026-08-18):
+Measured against live sites in [only-cli/benchmarks](https://github.com/only-cli/benchmarks) (only-cli 0.2.0-beta.1, 2026-08-18):
 
 | method | success | total tokens | avg ms |
 | --- | ---: | ---: | ---: |
-| `oc open` | 4/4 | 1,444 | 591 |
-| `oc raw` | 4/4 | 15,170 | 659 |
-| raw HTML fetch | 4/4 | 65,372 | 247 |
+| `oc open` | 6/6 | 1,941 | 516 |
+| `oc raw` | 6/6 | 23,762 | 603 |
+| raw HTML fetch | 6/6 | 179,771 | 472 |
 
-Across four real tasks (an article, a news front page, a Reddit discussion, a search) the compact view hands the agent 45x fewer tokens than raw HTML for roughly 350ms more per page. The heaviest single page, a Reddit thread, went from 52,899 tokens to 477. The benchmark repo has per-task numbers, methodology, and instructions for adding other tools and models.
+Across six real tasks (an article, a news front page, a Reddit discussion, a web search, a GitHub repository search, a LinkedIn company page) the compact view hands the agent 93x fewer tokens than raw HTML at comparable speed. GitHub search went from 67,902 tokens to 441; the LinkedIn page from 39,724 to 470; a Reddit thread from 52,935 to 479. The benchmark repo has per-task numbers, methodology, and instructions for adding other tools and models.
 
 ## Status
 
