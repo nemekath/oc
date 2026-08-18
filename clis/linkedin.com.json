@@ -1,0 +1,8 @@
+{
+  "domain": "linkedin.com",
+  "commands": {
+    "profile": { "open": "https://www.linkedin.com/in/{name}", "args": ["name"] },
+    "company": { "open": "https://www.linkedin.com/company/{name}", "args": ["name"] },
+    "jobs": { "open": "https://www.linkedin.com/jobs/search?keywords={query}", "args": ["query"] }
+  }
+}

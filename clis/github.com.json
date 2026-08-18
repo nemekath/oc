@@ -1,0 +1,10 @@
+{
+  "domain": "github.com",
+  "commands": {
+    "repo": { "open": "https://github.com/{owner}/{repo}", "args": ["owner", "repo"] },
+    "user": { "open": "https://github.com/{name}", "args": ["name"] },
+    "search": { "open": "https://github.com/search?q={query}&type=repositories", "args": ["query"] },
+    "trending": { "open": "https://github.com/trending" },
+    "issues": { "open": "https://github.com/{owner}/{repo}/issues", "args": ["owner", "repo"] }
+  }
+}

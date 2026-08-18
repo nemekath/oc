@@ -59,6 +59,8 @@ only-cli works on any mostly-static website with no per-site setup: news sites, 
 | --- | --- | --- |
 | Hacker News | news.ycombinator.com | `top`, `new`, `item <id>`, `user <name>` |
 | Reddit | reddit.com (via old.reddit.com) | `sub <name>`, `post <id>`, `user <name>`, `search <query>` |
+| GitHub | github.com | `repo <owner> <name>`, `user <name>`, `search <query>`, `trending`, `issues <owner> <name>` |
+| LinkedIn | linkedin.com | `profile <name>`, `company <name>`, `jobs <query>` (public guest views) |
 | DuckDuckGo | duckduckgo.com | `search <query>`, `lite <query>` |
 | Bing | bing.com | `search <query>`, `news <query>` |
 

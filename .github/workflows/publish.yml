@@ -34,10 +34,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      # No registry-url here: it writes an .npmrc auth-token line with a
+      # placeholder value, and npm then authenticates with that instead of
+      # falling through to OIDC trusted publishing.
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
       # Trusted publishing needs npm 11.5.1 or newer.
       - run: npm install -g npm@latest
       - run: npm ci
