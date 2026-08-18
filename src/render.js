@@ -1,10 +1,10 @@
 /**
  * Rendering is where the token budget is enforced. Everything printed here
- * gets read by a paying model, so the default view is dense and anything
- * skipped says so in one line.
+ * gets read by a paying model, so the default view is dense, anything cut says
+ * how much was cut, and the footer names the cheapest command that gets it.
  */
 
-const TEXT_CAP = 200;
+import { TEXT_CAP } from './distill.js';
 
 /**
  * Rough but stable token estimate. Close enough for budgets; the point is
@@ -14,49 +14,73 @@ const TEXT_CAP = 200;
  */
 export const estimateTokens = (s) => Math.ceil(s.length / 4);
 
+const num = (v) => v.toLocaleString('en-US');
+
 /**
- * Budget-aware compact view of a distilled page.
+ * Budget-aware compact view of a distilled page. `from` is a position in the
+ * collapsed block list, which is how `oc next` resumes a page where the last
+ * render stopped.
  * @param {import('./distill.js').Page} page
- * @param {{budget?: number}} [opts]
- * @returns {{text: string, stats: {tokens: number, blocks: number, rendered: number}}}
+ * @param {{budget?: number, from?: number}} [opts]
+ * @returns {{text: string, stats: {tokens: number, blocks: number, rendered: number, next: number|null, left: number, leftTokens: number}}}
  */
-export function render(page, { budget = 500 } = {}) {
-  const lines = page.title ? [`# ${page.title}`] : [];
+export function render(page, { budget = 500, from = 0 } = {}) {
+  const blocks = collapseRuns(page.blocks);
+  const head = page.title ? [from > 0 ? `# ${page.title} (continued)` : `# ${page.title}`] : [];
+  const lines = [...head];
   let spent = estimateTokens(lines.join('\n'));
-  let skipped = 0;
   let hasLinks = false;
   let hasInputs = false;
+  let i = Math.max(0, from);
 
-  for (const block of collapseRuns(page.blocks)) {
+  for (; i < blocks.length; i++) {
+    const block = blocks[i];
     // Never print the same content twice. Pages often repeat the title as
     // their first heading.
     if (block.type === 'heading' && block.text === page.title) continue;
     const line = formatBlock(block);
     if (!line) continue;
     const cost = estimateTokens(line) + 1;
-    if (spent + cost > budget) {
-      skipped++;
-      continue;
-    }
+    // Stop at the first block that does not fit instead of skipping past it:
+    // what is left has to stay one contiguous run for `oc next` to continue.
+    // The exception is a first block bigger than the whole budget, which is
+    // printed anyway so the cursor always moves.
+    if (spent + cost > budget && lines.length > head.length) break;
     spent += cost;
     lines.push(line);
     if (block.type === 'link' || block.type === 'button') hasLinks = true;
     if (block.type === 'input') hasInputs = true;
   }
 
-  if (skipped) lines.push(`... ${skipped} more blocks over budget, raise --budget or use oc raw`);
+  const rest = blocks.slice(i);
+  const leftTokens = rest.reduce((sum, b) => {
+    const line = formatBlock(b);
+    return line ? sum + estimateTokens(line) + 1 : sum;
+  }, 0);
+  if (rest.length) {
+    lines.push(`... ${num(rest.length)} more blocks (~${num(leftTokens)} tokens): 'oc next' for the next ~${num(budget)}, 'oc raw' for all`);
+  }
   const actions = [
     hasLinks && 'do <n>',
     hasInputs && 'fill <n> <text>',
     hasInputs && 'submit',
-    'raw <url>',
+    'read <n>',
+    rest.length && 'next',
+    'raw',
   ].filter(Boolean);
   lines.push(`actions: ${actions.join(' | ')}`);
 
   const text = lines.join('\n');
   return {
     text,
-    stats: { tokens: estimateTokens(text), blocks: page.blocks.length, rendered: page.blocks.length - skipped },
+    stats: {
+      tokens: estimateTokens(text),
+      blocks: blocks.length,
+      rendered: i - Math.max(0, from),
+      next: rest.length ? i : null,
+      left: rest.length,
+      leftTokens,
+    },
   };
 }
 
@@ -94,22 +118,28 @@ function collapseRuns(blocks) {
 }
 
 /**
+ * One line per block. `full` keeps the whole text, which is what `oc read`
+ * prints; the compact view cuts at TEXT_CAP and says how many characters went
+ * with the cut, so the agent can price the rest before asking for it.
  * @param {import('./distill.js').Block} b
+ * @param {{full?: boolean}} [opts]
  * @returns {string}
  */
-function formatBlock(b) {
+export function formatBlock(b, { full = false } = {}) {
+  const tag = b.n == null ? '' : `[${b.n}] `;
   switch (b.type) {
     case 'heading':
-      return `${'#'.repeat(Math.min(b.level ?? 2, 3))} ${b.text}`;
+      return `${'#'.repeat(Math.min(b.level ?? 2, 3))} ${tag}${b.text}`;
     case 'link':
-      return `[${b.n}] ${truncate(b.text)}`;
+      return `${tag}${full ? b.text : truncate(b.text)}`;
     case 'button':
-      return `[${b.n}] button "${truncate(b.text)}"`;
+      return `${tag}button "${full ? b.text : truncate(b.text)}"`;
     case 'input':
-      return `[${b.n}] input ${b.name} (${b.text})`;
+      return `${tag}input ${b.name} (${b.text})`;
     default:
-      return truncate(b.text);
+      return full ? `${tag}${b.text}` : `${tag}${truncate(b.text)}`;
   }
 }
 
-const truncate = (s) => (s.length > TEXT_CAP ? `${s.slice(0, TEXT_CAP)} ...` : s);
+const truncate = (s) =>
+  s.length > TEXT_CAP ? `${s.slice(0, TEXT_CAP)} ... +${num(s.length - TEXT_CAP)} chars` : s;

@@ -1,11 +1,12 @@
 /**
  * Sessions are plain JSON files on disk, one per name: the current URL, the
- * numbered handles from the last render so actions can resolve them, and a
- * short history. No daemon, no background process, no cookies yet.
+ * distilled blocks of the page it holds, how far the last render got through
+ * them, and a short history. No daemon, no background process, no cookies yet.
  *
  * The file exists so `oc do <n>` can follow a link the compact view never
  * printed the URL of. Hiding URLs is what makes `oc open` cheap; this is what
- * makes hiding them free.
+ * makes hiding them free. Keeping the blocks costs disk, not tokens, and it is
+ * what lets `oc read` and `oc next` answer without fetching the page again.
  */
 
 import { homedir } from 'node:os';
@@ -61,28 +62,72 @@ export function resolveHref(href, base) {
 
 const HISTORY_LIMIT = 20;
 
+// A ceiling on what one page may leave on disk. Nothing real comes close;
+// it is here so a runaway page cannot fill a home directory.
+const SNAPSHOT_CHARS = 500_000;
+
 /**
- * Session state for a freshly rendered page. Every numbered block is kept,
- * including the ones the budget skipped, because the handles an agent wants
- * are often the ones that did not fit.
+ * Session state for a freshly rendered page. Every block is kept, including
+ * the ones the budget stopped short of, because the part an agent wants next
+ * is by definition the part that did not fit.
  * @param {import('./distill.js').Page} page
  * @param {{history?: string[]}} [previous]
+ * @param {{cursor?: number|null}} [opts] - where the render stopped, null when it finished the page
  */
-export function sessionFromPage(page, previous) {
-  /** @type {Record<string, {type: string, text: string, href?: string, name?: string}>} */
-  const handles = {};
+export function sessionFromPage(page, previous, { cursor = 0 } = {}) {
+  /** @type {import('./distill.js').Block[]} */
+  const blocks = [];
+  let chars = 0;
+  let dropped = 0;
   for (const block of page.blocks) {
-    if (block.n == null) continue;
-    const url = block.href ? resolveHref(block.href, page.url) : null;
-    handles[block.n] = {
+    chars += block.text.length;
+    if (chars > SNAPSHOT_CHARS) {
+      dropped++;
+      continue;
+    }
+    const href = block.href ? resolveHref(block.href, page.url) : null;
+    blocks.push({
       type: block.type,
       text: block.text,
-      ...(url ? { href: url } : {}),
+      ...(block.n == null ? {} : { n: block.n }),
+      ...(block.level == null ? {} : { level: block.level }),
+      ...(href ? { href } : {}),
       ...(block.name ? { name: block.name } : {}),
-    };
+    });
   }
   const history = [...(previous?.history ?? []), page.url].slice(-HISTORY_LIMIT);
-  return { url: page.url, title: page.title, savedAt: new Date().toISOString(), handles, history };
+  return {
+    url: page.url,
+    title: page.title,
+    savedAt: new Date().toISOString(),
+    blocks,
+    cursor,
+    ...(dropped ? { dropped } : {}),
+    history,
+  };
+}
+
+/**
+ * Handle lookup for a saved page. Sessions written by earlier versions hold a
+ * handles map instead of blocks, so `oc do` keeps working across an upgrade
+ * even though `oc read` and `oc next` need the page reopened.
+ * @param {any} state
+ * @param {number} n
+ */
+export function handleFor(state, n) {
+  if (state?.blocks) return state.blocks.find((b) => b.n === n) ?? null;
+  return state?.handles?.[n] ?? null;
+}
+
+/**
+ * The numbers a saved page offers, for error messages that tell an agent what
+ * it could have asked for.
+ * @param {any} state
+ * @returns {number[]}
+ */
+export function handleNumbers(state) {
+  if (state?.blocks) return state.blocks.filter((b) => b.n != null).map((b) => b.n);
+  return Object.keys(state?.handles ?? {}).map(Number);
 }
 
 /**

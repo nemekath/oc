@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { distill, toMarkdown, toHTML, feedToHTML } from '../src/distill.js';
+import { distill, toMarkdown, toHTML, feedToHTML, TEXT_CAP } from '../src/distill.js';
 import { render, estimateTokens } from '../src/render.js';
 
 const html = readFileSync(new URL('./pages/news.html', import.meta.url), 'utf8');
@@ -30,15 +30,26 @@ test('raw html mode keeps markup', () => {
   assert.ok(!out.includes('<script'), 'script tag survived');
 });
 
-test('interactive elements get numbered handles in document order', () => {
+test('elements get numbered handles in document order', () => {
   const p = page();
   const links = p.blocks.filter((b) => b.type === 'link');
-  assert.equal(links[0].n, 1);
   assert.equal(links[0].text, 'Show HN: I built a tiny CSV toolkit');
+  assert.equal(links[0].n, 2, 'the page heading takes [1]');
   const input = p.blocks.find((b) => b.type === 'input');
   assert.equal(input.name, 'q');
   const button = p.blocks.find((b) => b.type === 'button');
   assert.equal(button.text, 'Search');
+  // Numbers rise once, in document order, and never repeat.
+  const nums = p.blocks.filter((b) => b.n != null).map((b) => b.n);
+  assert.deepEqual(nums, nums.map((_, i) => i + 1));
+});
+
+test('a text block long enough to be cut is numbered, a short one is not', () => {
+  const p = page();
+  const long = p.blocks.find((b) => b.type === 'text' && b.text.length > TEXT_CAP);
+  assert.ok(long.n, 'a cut block with no number cannot be read back');
+  const short = p.blocks.find((b) => b.type === 'text' && b.text === '312 points');
+  assert.equal(short.n, undefined);
 });
 
 test('same page yields the same output', () => {
@@ -48,7 +59,29 @@ test('same page yields the same output', () => {
 test('render respects the token budget', () => {
   const { text, stats } = render(page(), { budget: 100 });
   assert.ok(stats.tokens <= 120, `render cost ~${stats.tokens} tokens against a budget of 100`);
-  assert.ok(text.includes('over budget'), 'skipped blocks must be announced');
+  assert.match(text, /\.\.\. \d+ more blocks \(~\d+ tokens\)/, 'what was cut must be priced');
+  assert.ok(text.includes("'oc next'"), 'the cheapest way to the rest must be named');
+  assert.ok(text.includes('| next |'), 'next belongs in the actions of a cut page');
+});
+
+test('what a render stops at is where the next one starts', () => {
+  const p = page();
+  const first = render(p, { budget: 100 });
+  assert.equal(typeof first.stats.next, 'number');
+  const rest = render(p, { budget: 500, from: first.stats.next });
+  assert.ok(rest.text.startsWith('# Fixture News (continued)'));
+  assert.equal(rest.stats.next, null, 'the second render finishes the page');
+  // Nothing is printed twice and nothing is lost between the two.
+  assert.ok(!rest.text.includes('Postgres 18 released'));
+  assert.ok(first.text.includes('Postgres 18 released'));
+  assert.ok(rest.text.includes('input q'));
+});
+
+test('a page render never stalls on a block bigger than the budget', () => {
+  const { text, stats } = render(page(), { budget: 1 });
+  assert.ok(stats.next > 0, 'one block must always go out or next can never advance');
+  assert.ok(text.includes('Show HN'), 'the block that did not fit is printed anyway');
+  assert.ok(text.includes('more blocks'));
 });
 
 test('default render of a normal page fits the 500 token target', () => {

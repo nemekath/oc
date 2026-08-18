@@ -5,7 +5,7 @@ import TurndownService from 'turndown';
  * @typedef {Object} Block
  * @property {'heading'|'text'|'link'|'input'|'button'} type
  * @property {string} text
- * @property {number} [n] - action handle, only on interactive blocks
+ * @property {number} [n] - action handle
  * @property {number} [level] - heading level 1..6
  * @property {string} [href] - links only
  * @property {string} [name] - inputs only
@@ -15,6 +15,10 @@ import TurndownService from 'turndown';
  * @property {string} title
  * @property {Block[]} blocks
  */
+
+// Where the compact view cuts a text block. It lives here because numbering
+// depends on it: a block long enough to be cut is a block that needs a handle.
+export const TEXT_CAP = 200;
 
 // Dropped wholesale, subtree included. Nav and footer stay in v0.1: on many
 // sites they carry the only working links, and the budget in render.js is
@@ -28,8 +32,9 @@ const clean = (s) => s.replace(/\s+/g, ' ').trim();
 
 /**
  * Reduce raw HTML to an interaction tree: readable text plus numbered
- * interactive elements, in document order. Handles are assigned during a
- * single deterministic walk, so the same page always yields the same numbers.
+ * elements, in document order. The walk is deterministic and numbering is a
+ * second pass over its result, so the same page always yields the same
+ * numbers.
  * @param {string} html
  * @param {string} url
  * @returns {Page}
@@ -39,7 +44,6 @@ export function distill(html, url = '') {
   const title = clean(document.querySelector('title')?.textContent ?? '');
   /** @type {Block[]} */
   const blocks = [];
-  let handle = 0;
 
   const hidden = (el) =>
     el.getAttribute('hidden') !== null ||
@@ -64,7 +68,7 @@ export function distill(html, url = '') {
     if (tag === 'a' && node.getAttribute('href')) {
       const text = clean(node.textContent);
       if (text) {
-        blocks.push({ type: 'link', n: ++handle, text, href: node.getAttribute('href') });
+        blocks.push({ type: 'link', text, href: node.getAttribute('href') });
       }
       return;
     }
@@ -72,16 +76,16 @@ export function distill(html, url = '') {
       const kind = node.getAttribute('type') ?? 'text';
       if (kind === 'hidden') return;
       if (kind === 'submit' || kind === 'button') {
-        blocks.push({ type: 'button', n: ++handle, text: node.getAttribute('value') ?? 'submit' });
+        blocks.push({ type: 'button', text: node.getAttribute('value') ?? 'submit' });
         return;
       }
       const name = node.getAttribute('name') ?? node.getAttribute('placeholder') ?? tag;
-      blocks.push({ type: 'input', n: ++handle, text: kind, name });
+      blocks.push({ type: 'input', text: kind, name });
       return;
     }
     if (tag === 'button') {
       const text = clean(node.textContent) || 'button';
-      blocks.push({ type: 'button', n: ++handle, text });
+      blocks.push({ type: 'button', text });
       return;
     }
     for (const child of node.childNodes) walk(child);
@@ -89,7 +93,23 @@ export function distill(html, url = '') {
 
   const body = bodyOf(document);
   if (body) walk(body);
-  return { url, title, blocks: mergeText(blocks) };
+  return { url, title, blocks: number(mergeText(blocks)) };
+}
+
+/**
+ * Assign handles in document order. Interactive elements get one because they
+ * can be acted on, headings and long text blocks because they can be read:
+ * a text block over the cap is printed cut, and its number is what makes the
+ * rest of it reachable with `oc read <n>` instead of a second whole-page fetch.
+ * @param {Block[]} blocks
+ * @returns {Block[]}
+ */
+function number(blocks) {
+  let handle = 0;
+  for (const block of blocks) {
+    if (block.type !== 'text' || block.text.length > TEXT_CAP) block.n = ++handle;
+  }
+  return blocks;
 }
 
 /**

@@ -11,17 +11,19 @@ const HELP = `only-cli: the web as a compact terminal, built for AI agents.
 usage: oc <command> [args] [flags]
 
   open <url>          fetch and render a page with numbered actions
-  raw <url>           distilled markdown of the whole page
+  next                the next budget worth of the page already open
+  read <n>            full text of the region at [n], up to 2000 tokens
+  raw [url]           distilled markdown of the whole page
   do <n>              follow the numbered link [n] from the last page
   fill <n> <text>     type into a numbered input               (v0.2)
   submit [n]          submit a form                            (v0.2)
-  read [n]            full text of one region                  (v0.2)
   find <query>        search visible text on the current page  (v0.2)
-  back | next         history and pagination                   (v0.2)
+  back                return to the previous page              (v0.2)
   session ls|rm       manage saved sessions                    (v0.2)
 
 flags:
-  --budget <tokens>   tighten or loosen the render budget (default 500)
+  --budget <tokens>   tighten or loosen the render budget (default 500,
+                      2000 for read)
   --json              machine-stable JSON output
   --html              raw only: cleaned HTML instead of markdown
   --verbose, -v       metrics on stderr: tokens saved vs the page HTML, HTTP
@@ -30,16 +32,17 @@ flags:
                       globally. Off by default because metrics cost tokens too.
   --session <name>    keep separate page state under a name (default: default)
 
-'oc open' remembers the numbered elements it printed, so 'oc do 3' follows
-link [3] without you ever handling its URL. State lives in ~/.only-cli
+'oc open' remembers the page it printed, so 'oc do 3' follows link [3] without
+you ever handling its URL, and 'oc next' or 'oc read 12' picks up what the
+budget left behind without fetching it again. State lives in ~/.only-cli
 (override with OC_HOME).`;
 
 // A rendered page has to be remembered or its [3] means nothing to the next
 // command. Saving state must never break a render, so a home directory that
-// cannot be written costs the agent `do` and nothing else.
-const remember = (page, name) => {
+// cannot be written costs the agent `do`, `read`, and `next`, and nothing else.
+const remember = (page, name, cursor) => {
   try {
-    saveSession(name, sessionFromPage(page, loadSession(name)));
+    saveSession(name, sessionFromPage(page, loadSession(name), { cursor }));
   } catch {}
 };
 
@@ -72,19 +75,26 @@ async function main() {
   }
 
   const sessionName = values.session || DEFAULT_SESSION;
+  // Zero means "whatever this command's default is", which differs: the
+  // compact view targets 500 tokens, read targets 2000.
+  const asked = values.budget ? Number(values.budget) : 0;
+  if (values.budget && (!Number.isFinite(asked) || asked <= 0)) {
+    throw new Error('--budget must be a positive number');
+  }
 
   switch (command) {
     case 'open':
     case 'do':
     case 'raw': {
       // `do` is `open` with the URL looked up from the last render instead of
-      // typed, so both commands share one fetch, render, and save path.
+      // typed, so both commands share one fetch, render, and save path. `raw`
+      // with no URL means the page already open, which is what the compact
+      // view's footer offers when it has cut something.
       const url = command === 'do'
         ? act.activate(Number(args[0]), { session: sessionName }).url
-        : args[0];
+        : args[0] ?? (command === 'raw' ? loadSession(sessionName)?.url : undefined);
       if (!url) throw new Error(`usage: oc ${command} <url>`);
-      const budget = values.budget ? Number(values.budget) : 500;
-      if (!Number.isFinite(budget) || budget <= 0) throw new Error('--budget must be a positive number');
+      const budget = asked || 500;
       const t0 = performance.now();
       const { url: finalUrl, html, status, via } = await fetchPage(url);
       const fetchMs = performance.now() - t0;
@@ -109,20 +119,20 @@ async function main() {
         return;
       }
       const page = distill(html, finalUrl);
-      remember(page, sessionName);
       const { text, stats } = render(page, { budget });
+      remember(page, sessionName, stats.next);
       console.log(text);
       if (verbose) {
         console.error(`~${stats.tokens} tokens, ${stats.rendered}/${stats.blocks} blocks rendered, ${savings(stats.tokens, htmlTokens)}; ${resources()}`);
       }
       return;
     }
+    case 'read': return console.log(act.read(Number(args[0]), { session: sessionName, budget: asked || 2000 }));
+    case 'next': return console.log(act.next({ session: sessionName, budget: asked || 500 }));
     case 'fill': return act.fill(Number(args[0]), args.slice(1).join(' '));
     case 'submit': return act.submit(args[0] ? Number(args[0]) : undefined);
-    case 'read': return act.read(args[0] ? Number(args[0]) : undefined);
     case 'find': return act.find(args.join(' '));
     case 'back': return act.back();
-    case 'next': return act.next();
     case 'session': throw new act.NotImplemented('session');
     default:
       throw new Error(`unknown command '${command}', run oc --help`);
