@@ -91,13 +91,25 @@ The compact view reads all six pages for less than half the tokens of its cheape
 
 The end-to-end agent benchmark runs Claude Code headless (`claude -p` on `claude-sonnet-5`) on three live tasks, one web tool per session, and reads success, turns, tokens, and cost from its JSON output:
 
-| tool | success | total tokens | total cost USD | avg s |
-| --- | ---: | ---: | ---: | ---: |
-| oc | 3/3 | 353,379 | 0.22 | 12 |
-| `lynx -dump` | 3/3 | 323,725 | 0.26 | 10 |
-| raw curl | 2/3 | 253,776 | 0.14 | 23 |
-| Jina Reader | 3/3 | 361,603 | 0.27 | 14 |
-| Playwright MCP | 3/3 | 491,779 | 0.33 | 17 |
+| tool | success | turns | total tokens | total cost USD | avg s |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| oc | 3/3 ✅ | 14 | 353,379 | 0.22 ✅ | 12 |
+| `lynx -dump` | 3/3 ✅ | 13 ✅ | 323,725 ✅ | 0.26 | 10 ✅ |
+| raw curl | 2/3 | 23 | 253,776 | 0.14 | 23 |
+| Jina Reader | 3/3 ✅ | 13 ✅ | 361,603 | 0.27 | 14 |
+| Playwright MCP | 3/3 ✅ | 18 | 491,779 | 0.33 | 17 |
+
+The ✅ marks the best value per column among tools that finished every task.
+
+Every token claude billed per tool across the three tasks, failed runs included:
+
+```
+oc             ######################                     353,379 tokens  14 turns
+raw-curl       ########################################   651,102 tokens  23 turns  1 failed
+lynx           ####################                       323,725 tokens  13 turns
+jina-reader    ######################                     361,603 tokens  13 turns
+playwright-mcp ##############################             491,779 tokens  18 turns
+```
 
 Each session gets a skill documenting its tool, so every condition runs at its best. oc finished all three tasks at the lowest cost of any full-success condition, and oc and lynx were the only tools whose answers were real content on every task: Jina Reader and Playwright MCP answered the Reddit task by reporting that Reddit blocks them, while raw curl burned its whole 13-turn budget there, roughly 400k tokens and twenty cents, and returned nothing. Totals include Claude Code's own per-session overhead, so compare rows, not absolutes. The benchmark repo has per-task numbers, methodology, and instructions for adding other tools and models.
 
