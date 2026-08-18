@@ -10,11 +10,11 @@ Key facts:
 - Benchmarked at roughly 45x fewer tokens than reading raw HTML, with per-task numbers at https://github.com/only-cli/benchmarks
 - Works on any mostly-static website; tuned shortcuts ship for Hacker News, Reddit, DuckDuckGo, and Bing
 - Requests impersonate Chrome, so pages that block plain scripts often still work
-- Claude Code skill included: `npx skills add only-cli/only-cli`
+- Claude Code skill included: `npx skills add only-cli/oc`
 - No JavaScript rendering yet and no login sessions yet (both on the roadmap)
 
 ## Docs
 
-- [README](https://github.com/only-cli/only-cli/blob/main/README.md): install, agent setup, commands, supported websites, benchmarks
-- [CONTRIBUTING](https://github.com/only-cli/only-cli/blob/main/CONTRIBUTING.md): design principles, adding site definitions
+- [README](https://github.com/only-cli/oc/blob/main/README.md): install, agent setup, commands, supported websites, benchmarks
+- [CONTRIBUTING](https://github.com/only-cli/oc/blob/main/CONTRIBUTING.md): design principles, adding site definitions
 - [Benchmarks](https://github.com/only-cli/benchmarks): token usage, speed, and success rate against other ways agents read the web

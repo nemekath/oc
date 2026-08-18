@@ -5,8 +5,8 @@ Thanks for wanting to help. This is a small project with strong opinions, so thi
 ## Setup
 
 ```
-git clone https://github.com/only-cli/only-cli
-cd only-cli
+git clone https://github.com/only-cli/oc
+cd oc
 npm install
 npm test
 ```
@@ -41,7 +41,7 @@ Open an issue with the exact command, the output you got, and the output you exp
 
 ## Releasing (maintainer)
 
-Publishing a GitHub release runs `.github/workflows/publish.yml`, which tests and publishes to npm through OIDC trusted publishing: no npm token stored anywhere, no one-time password, and npm attaches provenance automatically. The trusted publisher link (npm package settings, GitHub Actions, repo `only-cli/only-cli`, workflow `publish.yml`) has to be configured once on npmjs.com after the first manual publish, since npm only lets you attach a trusted publisher to a package that already exists.
+Publishing a GitHub release runs `.github/workflows/publish.yml`, which tests and publishes to npm through OIDC trusted publishing: no npm token stored anywhere, no one-time password, and npm attaches provenance automatically. The trusted publisher link (npm package settings, GitHub Actions, repo `only-cli/oc`, workflow `publish.yml`) has to be configured once on npmjs.com after the first manual publish, since npm only lets you attach a trusted publisher to a package that already exists.
 
 ## Maintainer
 
