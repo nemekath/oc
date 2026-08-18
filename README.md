@@ -87,19 +87,19 @@ Measured against live sites in [only-cli/benchmarks](https://github.com/only-cli
 | Selenium rendered HTML | 6/6 | 166,557 | 1,189 |
 | raw HTML fetch | 6/6 | 177,685 | 406 |
 
-The compact view hands the agent 3x fewer tokens than anything else on the board and 92x fewer than raw HTML. The nearest rivals are floors, not full reads: the computer-use rows price a single 1024x768 screenshot, one look at the top of the page, and Browser Use's state message drops most page text. Among methods that deliver the page content, the gap is 8x to Jina Reader and 13x to Playwright MCP's accessibility snapshot. oc was also the only cleaner to return real content on all six tasks: lynx and the naive fetcher hit a DuckDuckGo challenge, and Reddit served Jina its block page.
+The compact view reads all six pages for less than half the tokens of its cheapest rival, a single-screenshot floor, and 92x fewer than raw HTML. The nearest rivals are floors, not full reads: the computer-use rows price a single 1024x768 screenshot, one look at the top of the page, and Browser Use's state message drops most page text. Among methods that deliver the page content, the gap is 8x to Jina Reader and 13x to Playwright MCP's accessibility snapshot. oc was also the only cleaner to return real content on all six tasks: lynx and the naive fetcher hit a DuckDuckGo challenge, and Reddit served Jina its block page.
 
 The end-to-end agent benchmark runs Claude Code headless (`claude -p` on `claude-sonnet-5`) on three live tasks, one web tool per session, and reads success, turns, tokens, and cost from its JSON output:
 
 | tool | success | total tokens | total cost USD | avg s |
 | --- | ---: | ---: | ---: | ---: |
-| oc | 3/3 | 291,938 | 0.20 | 11 |
-| `lynx -dump` | 3/3 | 261,073 | 0.23 | 10 |
-| raw curl | 2/3 | 236,852 | 0.16 | 27 |
-| Jina Reader | 2/3 | 140,365 | 0.17 | 24 |
-| Playwright MCP | 2/3 | 285,364 | 0.32 | 31 |
+| oc | 3/3 | 353,379 | 0.22 | 12 |
+| `lynx -dump` | 3/3 | 323,725 | 0.26 | 10 |
+| raw curl | 2/3 | 253,776 | 0.14 | 23 |
+| Jina Reader | 3/3 | 361,603 | 0.27 | 14 |
+| Playwright MCP | 3/3 | 491,779 | 0.33 | 17 |
 
-oc and lynx were the only tools the agent finished every task with, and oc did it on the fewest tokens and lowest cost of any full-success run. Failures are where the money goes: raw curl, Jina Reader, and Playwright MCP each burned their whole 13-turn budget on the Reddit task, roughly 400k tokens and twenty cents apiece, and returned nothing, while oc read the same thread in 4 turns. Totals include Claude Code's own per-session overhead, so compare rows, not absolutes. The benchmark repo has per-task numbers, methodology, and instructions for adding other tools and models.
+Each session gets a skill documenting its tool, so every condition runs at its best. oc finished all three tasks at the lowest cost of any full-success condition, and oc and lynx were the only tools whose answers were real content on every task: Jina Reader and Playwright MCP answered the Reddit task by reporting that Reddit blocks them, while raw curl burned its whole 13-turn budget there, roughly 400k tokens and twenty cents, and returned nothing. Totals include Claude Code's own per-session overhead, so compare rows, not absolutes. The benchmark repo has per-task numbers, methodology, and instructions for adding other tools and models.
 
 ## Status
 
