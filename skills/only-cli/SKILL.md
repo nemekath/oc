@@ -10,8 +10,8 @@ Turns a web page into a compact terminal view instead of a raw HTML dump. A typi
 No install needed, run it with npx:
 
 ```
-npx only-cli open <url>     compact view with numbered elements
-npx only-cli raw <url>      whole page as markdown (add --html for cleaned HTML)
+npx @only-cli/oc open <url>     compact view with numbered elements
+npx @only-cli/oc raw <url>      whole page as markdown (add --html for cleaned HTML)
 ```
 
 ## Reading the output

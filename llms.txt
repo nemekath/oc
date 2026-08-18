@@ -1,10 +1,10 @@
 # only-cli
 
-> only-cli (command: `oc`) turns websites into a command line interface for AI agents. Instead of fetching raw HTML (tens of thousands of tokens) or driving a headless browser with screenshots, an agent runs `npx only-cli open <url>` and gets a distilled text view of the page in a few hundred tokens, with numbered links and form fields it can act on. Works with Claude Code, Claude, ChatGPT, Codex, Gemini, Antigravity, and any agent that can run shell commands.
+> only-cli (command: `oc`) turns websites into a command line interface for AI agents. Instead of fetching raw HTML (tens of thousands of tokens) or driving a headless browser with screenshots, an agent runs `npx @only-cli/oc open <url>` and gets a distilled text view of the page in a few hundred tokens, with numbered links and form fields it can act on. Works with Claude Code, Claude, ChatGPT, Codex, Gemini, Antigravity, and any agent that can run shell commands.
 
 Key facts:
 
-- Install: `npm install -g only-cli`, or zero-install with `npx only-cli`
+- Install: `npm install -g @only-cli/oc`, or zero-install with `npx @only-cli/oc`
 - Commands: `oc open <url>` (compact view with numbered actions), `oc raw <url>` (whole page as markdown, `--html` for cleaned HTML), `oc --help` for the full surface
 - Default output budget is 500 tokens per page; `--budget <n>` adjusts it
 - Benchmarked at roughly 45x fewer tokens than reading raw HTML, with per-task numbers at https://github.com/only-cli/benchmarks

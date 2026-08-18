@@ -20,7 +20,7 @@ No per-site adapters required, no browser extension, no daemon. One generic dist
 ## Install
 
 ```
-npm install -g only-cli
+npm install -g @only-cli/oc
 ```
 
 Requires Node 20+. Requests go through [impers](https://github.com/lexiforest/impers) impersonating Chrome; if impers is unavailable the tool falls back to native fetch.
@@ -29,7 +29,7 @@ Requires Node 20+. Requests go through [impers](https://github.com/lexiforest/im
 
 The fastest setup is one line in your agent's instructions file (CLAUDE.md, AGENTS.md, or equivalent):
 
-> When you need content from a web page, run `npx only-cli open <url>` instead of fetching raw HTML. Run `npx only-cli --help` once to learn the commands.
+> When you need content from a web page, run `npx @only-cli/oc open <url>` instead of fetching raw HTML. Run `npx @only-cli/oc --help` once to learn the commands.
 
 Claude Code users can install the skill instead: copy `skills/only-cli/` into your project's `.claude/skills/` directory (or `~/.claude/skills/` to enable it everywhere). A skill costs almost no tokens until the agent actually invokes it, which fits how this whole project thinks. The same skill also installs through the [skills.sh](https://skills.sh) directory into Claude Code, Cursor, Codex, Copilot, and others:
 
@@ -37,7 +37,7 @@ Claude Code users can install the skill instead: copy `skills/only-cli/` into yo
 npx skills add only-cli/only-cli
 ```
 
-No setup at all also works: `npx only-cli` runs without a global install, and the tool teaches its own command surface through `--help`, the `actions:` line at the bottom of every render, and error messages that name the next command to run.
+No setup at all also works: `npx @only-cli/oc` runs without a global install, and the tool teaches its own command surface through `--help`, the `actions:` line at the bottom of every render, and error messages that name the next command to run.
 
 ## Commands
 

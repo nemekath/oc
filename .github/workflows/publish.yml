@@ -4,7 +4,7 @@
 # file publish.yml. From then on, publishing a GitHub release ships to npm.
 #
 # Release channels map to npm dist-tags:
-#   latest  stable releases, what `npm install only-cli` gets
+#   latest  stable releases, what `npm install @only-cli/oc` gets
 #   beta    release candidates, version like 0.2.0-beta.1
 #   alpha   earlier previews, version like 0.2.0-alpha.1
 #   dev     throwaway builds from main, version stamped per run
