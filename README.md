@@ -51,9 +51,34 @@ oc submit [n]          submit a form                            (v0.2)
 
 Flags: `--budget <tokens>` (default 500), `--json`, `--html` (raw as cleaned HTML instead of markdown), `--verbose`/`-v` (metrics on stderr: tokens saved vs the page HTML, HTTP status and client identity, timing, transfer size, memory; alias `--stats`, or export `OC_VERBOSE=1`). Metrics are off by default because they cost tokens too; agents should pass `--verbose` only when running verbosely.
 
+## Supported websites
+
+only-cli works on any mostly-static website with no per-site setup: news sites, blogs, documentation, forums, search engines. One generic engine distills whatever HTML comes back. On top of that, `clis/` ships tuned command shortcuts for:
+
+| website | domain | shortcuts |
+| --- | --- | --- |
+| Hacker News | news.ycombinator.com | `top`, `new`, `item <id>`, `user <name>` |
+| Reddit | reddit.com (via old.reddit.com) | `sub <name>`, `post <id>`, `user <name>`, `search <query>` |
+| DuckDuckGo | duckduckgo.com | `search <query>`, `lite <query>` |
+| Bing | bing.com | `search <query>`, `news <query>` |
+
+Not supported yet: pages that only render with JavaScript (a headless fallback is planned for v0.3), sites behind logins (sessions land in v0.2), and sites with hard bot challenges. Adding a site shortcut is a small JSON file; see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Benchmarks
+
+Measured against live sites in [only-cli/benchmarks](https://github.com/only-cli/benchmarks) (only-cli 0.1.0, 2026-08-18):
+
+| method | success | total tokens | avg ms |
+| --- | ---: | ---: | ---: |
+| `oc open` | 4/4 | 1,444 | 591 |
+| `oc raw` | 4/4 | 15,170 | 659 |
+| raw HTML fetch | 4/4 | 65,372 | 247 |
+
+Across four real tasks (an article, a news front page, a Reddit discussion, a search) the compact view hands the agent 45x fewer tokens than raw HTML for roughly 350ms more per page. The heaviest single page, a Reddit thread, went from 52,899 tokens to 477. The benchmark repo has per-task numbers, methodology, and instructions for adding other tools and models.
+
 ## Status
 
-Early. v0.1 covers static pages, budget-aware rendering, and offline tests. Sessions and actions land in v0.2, a lazy headless fallback for script-heavy pages in v0.3. The roadmap and all design constraints live in [PROMPT.md](PROMPT.md); how to contribute is in [CONTRIBUTING.md](CONTRIBUTING.md).
+Early. v0.1 covers static pages, budget-aware rendering, and offline tests. Sessions and actions land in v0.2, a lazy headless fallback for script-heavy pages in v0.3. The design principles and how to contribute are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Known limits, honestly: no JavaScript rendering yet, no sites behind logins yet, and pages behind hard bot challenges may still refuse the tool.
 

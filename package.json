@@ -20,9 +20,16 @@
   "keywords": [
     "cli",
     "ai-agents",
-    "web",
+    "web-browsing",
+    "token-efficient",
+    "claude",
+    "claude-code",
+    "chatgpt",
+    "codex",
+    "llm",
     "scraping",
-    "tokens"
+    "html-to-markdown",
+    "agent-tools"
   ],
   "author": "only-cli (https://github.com/only-cli)",
   "license": "MIT",

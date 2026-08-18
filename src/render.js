@@ -28,8 +28,8 @@ export function render(page, { budget = 500 } = {}) {
   let hasInputs = false;
 
   for (const block of collapseRuns(page.blocks)) {
-    // Rule from PROMPT.md: never print the same content twice. Pages often
-    // repeat the title as their first heading.
+    // Never print the same content twice. Pages often repeat the title as
+    // their first heading.
     if (block.type === 'heading' && block.text === page.title) continue;
     const line = formatBlock(block);
     if (!line) continue;
@@ -61,7 +61,7 @@ export function render(page, { budget = 500 } = {}) {
 }
 
 /**
- * The "collapse repeated siblings" rule from PROMPT.md. Long runs of short
+ * Collapse repeated siblings. Long runs of short
  * links are almost always nav chrome (subreddit bars, tag clouds, footers)
  * and would otherwise eat the whole budget before the content starts. Handles
  * are assigned in distill, so the hidden links keep their numbers and the

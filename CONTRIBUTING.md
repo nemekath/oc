@@ -1,6 +1,6 @@
 # Contributing to only-cli
 
-Thanks for wanting to help. This is a small project with strong opinions, so this guide is short but strict. Read [PROMPT.md](PROMPT.md) before anything else: it holds the design principles, the pipeline, and the roadmap, and every PR is judged against it.
+Thanks for wanting to help. This is a small project with strong opinions, so this guide is short but strict. Every PR is judged against one ranked list of principles: token economy first, slim install, stateless by default, deterministic output, fail loud. When two of them conflict, the one earlier in the list wins.
 
 ## Setup
 
@@ -27,13 +27,13 @@ Plain JavaScript, ESM, JSDoc types, no build step. Match the code around you. Co
 
 ## Writing style
 
-All prose in this repo (docs, comments, commit messages, error text, CLI help) follows the rules in PROMPT.md: write like a human, be precise like a developer, and leave a trail like a contributor. Be honest about limitations. Do not use em dashes anywhere; use commas, colons, or separate sentences.
+All prose in this repo (docs, comments, commit messages, error text, CLI help) follows the same rules: write like a human, be precise like a developer, and leave a trail like a contributor. Be honest about limitations. Do not use em dashes anywhere; use commas, colons, or separate sentences.
 
 Commit messages explain why, not just what. "Cap link text at 200 chars, long titles were eating half the budget" tells the next person everything.
 
 ## Adding a site definition
 
-Per-site CLIs live in `clis/`, one JSON file per domain, following the spec format section in PROMPT.md. Keep it under 50 lines. If the site has a public JSON API, point the commands at that instead of the HTML pages. If your definition needs logic, it is trying to become an adapter, and the answer is to improve the generic engine instead.
+Per-site CLIs live in `clis/`, one JSON file per domain: the domain plus a `commands` map of name, help line, and URL template, exactly like the existing files. Keep it under 50 lines, no OpenAPI. If the site has a public JSON API, point the commands at that instead of the HTML pages. If your definition needs logic, it is trying to become an adapter, and the answer is to improve the generic engine instead.
 
 ## Reporting bugs
 

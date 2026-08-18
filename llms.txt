@@ -1,0 +1,20 @@
+# only-cli
+
+> only-cli (command: `oc`) turns websites into a command line interface for AI agents. Instead of fetching raw HTML (tens of thousands of tokens) or driving a headless browser with screenshots, an agent runs `npx only-cli open <url>` and gets a distilled text view of the page in a few hundred tokens, with numbered links and form fields it can act on. Works with Claude Code, Claude, ChatGPT, Codex, Gemini, Antigravity, and any agent that can run shell commands.
+
+Key facts:
+
+- Install: `npm install -g only-cli`, or zero-install with `npx only-cli`
+- Commands: `oc open <url>` (compact view with numbered actions), `oc raw <url>` (whole page as markdown, `--html` for cleaned HTML), `oc --help` for the full surface
+- Default output budget is 500 tokens per page; `--budget <n>` adjusts it
+- Benchmarked at roughly 45x fewer tokens than reading raw HTML, with per-task numbers at https://github.com/only-cli/benchmarks
+- Works on any mostly-static website; tuned shortcuts ship for Hacker News, Reddit, DuckDuckGo, and Bing
+- Requests impersonate Chrome, so pages that block plain scripts often still work
+- Claude Code skill included: `npx skills add only-cli/only-cli`
+- No JavaScript rendering yet and no login sessions yet (both on the roadmap)
+
+## Docs
+
+- [README](https://github.com/only-cli/only-cli/blob/main/README.md): install, agent setup, commands, supported websites, benchmarks
+- [CONTRIBUTING](https://github.com/only-cli/only-cli/blob/main/CONTRIBUTING.md): design principles, adding site definitions
+- [Benchmarks](https://github.com/only-cli/benchmarks): token usage, speed, and success rate against other ways agents read the web
