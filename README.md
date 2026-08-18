@@ -71,17 +71,35 @@ Not supported yet: pages that only render with JavaScript (a headless fallback i
 
 ## Benchmarks
 
-Measured against live sites in [only-cli/benchmarks](https://github.com/only-cli/benchmarks) (only-cli 0.2.0-beta.1, 2026-08-18):
+Measured against live sites in [only-cli/benchmarks](https://github.com/only-cli/benchmarks) (only-cli 0.2.0-beta.1, 2026-08-18). What each method hands the agent per page view, across six real tasks (an article, a news front page, a Reddit discussion, a web search, a GitHub repository search, a LinkedIn company page):
 
 | method | success | total tokens | avg ms |
 | --- | ---: | ---: | ---: |
-| `oc open` | 6/6 | 1,941 | 548 |
-| `oc raw` | 6/6 | 23,768 | 585 |
-| Jina Reader | 6/6 | 16,344 | 2,024 |
-| `lynx -dump` | 5/6 | 25,138 | 494 |
-| raw HTML fetch | 6/6 | 176,659 | 283 |
+| `oc open` | 6/6 | 1,936 | 540 |
+| `oc raw` | 6/6 | 21,334 | 541 |
+| OpenAI computer use (screenshot floor) | 6/6 | 4,590 | |
+| Claude computer use (screenshot floor) | 6/6 | 6,294 | 840 |
+| Browser Use (state message) | 6/6 | 6,470 | 2,543 |
+| Jina Reader | 6/6 | 16,402 | 636 |
+| `lynx -dump` | 5/6 | 24,657 | 457 |
+| Playwright MCP (snapshot) | 6/6 | 25,832 | 365 |
+| Playwright rendered HTML | 6/6 | 101,361 | 730 |
+| Selenium rendered HTML | 6/6 | 166,557 | 1,189 |
+| raw HTML fetch | 6/6 | 177,685 | 406 |
 
-Across six real tasks (an article, a news front page, a Reddit discussion, a web search, a GitHub repository search, a LinkedIn company page) the compact view hands the agent 8x fewer tokens than the next-best cleaner and 91x fewer than raw HTML, at the lowest latency of anything that cleans the page. GitHub search went from 67,902 tokens to 441; the LinkedIn page from 43,330 to 471; a Reddit thread from 52,936 to 479. It was also the only method to return real content on all six tasks: lynx and the naive fetcher hit a DuckDuckGo challenge, and Reddit served Jina its block page. The benchmark repo has per-task numbers, methodology, and instructions for adding other tools and models.
+The compact view hands the agent 3x fewer tokens than anything else on the board and 92x fewer than raw HTML. The nearest rivals are floors, not full reads: the computer-use rows price a single 1024x768 screenshot, one look at the top of the page, and Browser Use's state message drops most page text. Among methods that deliver the page content, the gap is 8x to Jina Reader and 13x to Playwright MCP's accessibility snapshot. oc was also the only cleaner to return real content on all six tasks: lynx and the naive fetcher hit a DuckDuckGo challenge, and Reddit served Jina its block page.
+
+The end-to-end agent benchmark runs Claude Code headless (`claude -p` on `claude-sonnet-5`) on three live tasks, one web tool per session, and reads success, turns, tokens, and cost from its JSON output:
+
+| tool | success | total tokens | total cost USD | avg s |
+| --- | ---: | ---: | ---: | ---: |
+| oc | 3/3 | 291,938 | 0.20 | 11 |
+| `lynx -dump` | 3/3 | 261,073 | 0.23 | 10 |
+| raw curl | 2/3 | 236,852 | 0.16 | 27 |
+| Jina Reader | 2/3 | 140,365 | 0.17 | 24 |
+| Playwright MCP | 2/3 | 285,364 | 0.32 | 31 |
+
+oc and lynx were the only tools the agent finished every task with, and oc did it on the fewest tokens and lowest cost of any full-success run. Failures are where the money goes: raw curl, Jina Reader, and Playwright MCP each burned their whole 13-turn budget on the Reddit task, roughly 400k tokens and twenty cents apiece, and returned nothing, while oc read the same thread in 4 turns. Totals include Claude Code's own per-session overhead, so compare rows, not absolutes. The benchmark repo has per-task numbers, methodology, and instructions for adding other tools and models.
 
 ## Status
 
