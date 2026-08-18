@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { distill, toMarkdown, toHTML } from '../src/distill.js';
+import { distill, toMarkdown, toHTML, feedToHTML } from '../src/distill.js';
 import { render, estimateTokens } from '../src/render.js';
 
 const html = readFileSync(new URL('./pages/news.html', import.meta.url), 'utf8');
 const page = () => distill(html, 'https://example.test/news');
+const feed = readFileSync(new URL('./pages/feed.xml', import.meta.url), 'utf8');
 
 test('noise never reaches the output, compact or raw', () => {
   for (const out of [render(page(), { budget: 5000 }).text, toMarkdown(html), toHTML(html)]) {
@@ -67,6 +68,40 @@ test('title becomes the page heading', () => {
 
 test('token estimate is stable and roughly chars over four', () => {
   assert.equal(estimateTokens('abcdefgh'), 2);
+});
+
+test('atom feeds render as pages: entries become headings, bodies unescape', () => {
+  const p = distill(feed, 'https://example.test/feeds/question/42');
+  assert.equal(p.title, 'Why is the sky blue? - Fixture Overflow');
+  const headings = p.blocks.filter((b) => b.type === 'heading');
+  assert.equal(headings[0].text, 'Why is the sky blue?');
+  assert.equal(headings[1].text, 'Answer by Tyndall for Why is the sky blue?');
+  const open = p.blocks.find((b) => b.type === 'link' && b.text === 'open');
+  assert.equal(open.href, 'https://example.test/questions/42/why-is-the-sky-blue');
+  const text = p.blocks.map((b) => b.text).join(' ');
+  assert.ok(text.includes('Rayleigh scattering'), 'entry body missing');
+  assert.ok(text.includes('by Ray Leigh, 2026-04-08'), 'byline missing');
+  assert.ok(!text.includes('&lt;'), 'entry body left escaped');
+});
+
+test('feed entry code blocks survive raw markdown', () => {
+  const md = toMarkdown(feed);
+  assert.ok(md.startsWith('# Why is the sky blue? - Fixture Overflow'));
+  assert.ok(md.includes('wavelength < 450nm'), 'code content missing');
+  assert.ok(md.includes('[the derivation](https://example.test/scattering)'), 'link inside entry body missing');
+});
+
+test('rss with cdata bodies converts too, ordinary html does not', () => {
+  const rss = `<?xml version="1.0"?><rss version="2.0"><channel><title>Fixture Blog</title>
+    <item><title>Post one</title><guid>https://example.test/p/1</guid>
+    <pubDate>Mon, 17 Aug 2026 00:00:00 GMT</pubDate>
+    <description><![CDATA[<p>A <em>cdata</em> body with markup.</p>]]></description></item>
+    </channel></rss>`;
+  const p = distill(rss, 'https://example.test/rss');
+  assert.equal(p.title, 'Fixture Blog');
+  const text = p.blocks.map((b) => b.text).join(' ');
+  assert.ok(text.includes('A cdata body with markup.'), 'cdata body missing');
+  assert.equal(feedToHTML(html), null, 'ordinary html misread as a feed');
 });
 
 test('long runs of short links collapse into a range marker', () => {

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:re="http://purl.org/atompub/rank/1.0">
+    <title type="text">Why is the sky blue? - Fixture Overflow</title>
+    <link rel="self" href="https://example.test/feeds/question/42" type="application/atom+xml" />
+    <link rel="alternate" href="https://example.test/q/42" type="text/html" />
+    <subtitle>most recent 30 from example.test</subtitle>
+    <updated>2026-08-18T00:00:00Z</updated>
+    <id>https://example.test/feeds/question/42</id>
+    <entry>
+        <id>https://example.test/q/42</id>
+        <re:rank scheme="https://example.test">7</re:rank>
+        <title type="text">Why is the sky blue?</title>
+            <category scheme="https://example.test/tags" term="physics" />
+            <category scheme="https://example.test/tags" term="optics" />
+        <author>
+            <name>Ray Leigh</name>
+            <uri>https://example.test/users/1</uri>
+        </author>
+        <link rel="alternate" href="https://example.test/questions/42/why-is-the-sky-blue" />
+        <published>2012-06-27T13:51:36Z</published>
+        <updated>2026-04-08T05:35:32Z</updated>
+        <summary type="html">
+            &lt;p&gt;Looking up on a clear day the sky is blue, yet sunlight is white.&lt;/p&gt;&#xA;&lt;pre&gt;&lt;code&gt;wavelength &amp;lt; 450nm&#xA;&lt;/code&gt;&lt;/pre&gt;&#xA;&lt;p&gt;What scatters the shorter wavelengths?&lt;/p&gt;
+        </summary>
+    </entry>
+    <entry>
+        <id>https://example.test/a/43</id>
+        <re:rank scheme="https://example.test">12</re:rank>
+        <title type="text">Answer by Tyndall for Why is the sky blue?</title>
+        <author>
+            <name>Tyndall</name>
+            <uri>https://example.test/users/2</uri>
+        </author>
+        <link rel="alternate" href="https://example.test/questions/42/why-is-the-sky-blue/43#43" />
+        <published>2012-06-27T14:00:00Z</published>
+        <updated>2012-06-27T14:00:00Z</updated>
+        <summary type="html">
+            &lt;p&gt;Rayleigh scattering. Shorter wavelengths scatter far more strongly, see &lt;a href=&quot;https://example.test/scattering&quot;&gt;the derivation&lt;/a&gt;.&lt;/p&gt;
+        </summary>
+    </entry>
+</feed>

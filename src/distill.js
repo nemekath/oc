@@ -108,6 +108,8 @@ const bodyOf = (document) => document.querySelector('body') ?? document.document
  */
 function cleanDocument(html) {
   const { document } = parseHTML(feedToHTML(html) ?? html);
+  // Read the title before the sweep below removes the head with it.
+  const title = clean(document.querySelector('title')?.textContent ?? '');
   for (const tag of DROP) {
     for (const el of [...document.querySelectorAll(tag)]) el.remove();
   }
@@ -115,7 +117,7 @@ function cleanDocument(html) {
   for (const el of [...document.querySelectorAll('[style]')]) {
     if (/display:\s*none/.test(el.getAttribute('style') ?? '')) el.remove();
   }
-  return document;
+  return { document, title };
 }
 
 /**
@@ -125,8 +127,7 @@ function cleanDocument(html) {
  * @returns {string}
  */
 export function toMarkdown(html) {
-  const document = cleanDocument(html);
-  const title = clean(document.querySelector('title')?.textContent ?? '');
+  const { document, title } = cleanDocument(html);
   const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
   const el = bodyOf(document);
   const body = el ? turndown.turndown(el.innerHTML).trim() : '';
@@ -140,7 +141,7 @@ export function toMarkdown(html) {
  * @returns {string}
  */
 export function toHTML(html) {
-  const document = cleanDocument(html);
+  const { document } = cleanDocument(html);
   const el = bodyOf(document);
   return el ? el.innerHTML.trim() : '';
 }
