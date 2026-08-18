@@ -1,0 +1,44 @@
+{
+  "name": "only-cli",
+  "version": "0.1.0",
+  "description": "Turn websites into a compact CLI so AI agents can browse without burning tokens.",
+  "type": "module",
+  "bin": {
+    "oc": "src/cli.js"
+  },
+  "files": [
+    "src",
+    "clis",
+    "skills"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "cli",
+    "ai-agents",
+    "web",
+    "scraping",
+    "tokens"
+  ],
+  "author": "only-cli (https://github.com/only-cli)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/only-cli/oc.git"
+  },
+  "homepage": "https://github.com/only-cli/oc#readme",
+  "bugs": {
+    "url": "https://github.com/only-cli/oc/issues"
+  },
+  "dependencies": {
+    "linkedom": "^0.18.12",
+    "turndown": "^7.2.4"
+  },
+  "optionalDependencies": {
+    "impers": "^0.1.0"
+  }
+}

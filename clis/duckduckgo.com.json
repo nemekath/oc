@@ -1,0 +1,7 @@
+{
+  "domain": "duckduckgo.com",
+  "commands": {
+    "search": { "open": "https://html.duckduckgo.com/html/?q={query}", "args": ["query"] },
+    "lite": { "open": "https://lite.duckduckgo.com/lite/?q={query}", "args": ["query"] }
+  }
+}

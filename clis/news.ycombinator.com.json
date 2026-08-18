@@ -1,0 +1,9 @@
+{
+  "domain": "news.ycombinator.com",
+  "commands": {
+    "top": { "open": "https://news.ycombinator.com" },
+    "new": { "open": "https://news.ycombinator.com/newest" },
+    "item": { "open": "https://news.ycombinator.com/item?id={id}", "args": ["id"] },
+    "user": { "open": "https://news.ycombinator.com/user?id={name}", "args": ["name"] }
+  }
+}

@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head>
+  <title>Fixture News</title>
+  <meta charset="utf-8">
+  <script>window.tracker = { id: 'noise that must never reach the render' };</script>
+  <style>.hot { color: red; } body { font-family: sans-serif; }</style>
+</head>
+<body>
+  <div id="cookie-banner" style="display:none">We value your privacy. Accept all cookies?</div>
+  <div hidden>hidden drawer content</div>
+  <h1>Fixture News</h1>
+  <ol>
+    <li><a href="/item?id=1">Show HN: I built a tiny CSV toolkit</a> <span>312 points</span> <a href="/item?id=1#comments">87 comments</a></li>
+    <li><a href="/item?id=2">Postgres 18 released</a> <span>540 points</span> <a href="/item?id=2#comments">203 comments</a></li>
+    <li><a href="/item?id=3">Why terminals still win</a> <span>128 points</span> <a href="/item?id=3#comments">45 comments</a></li>
+  </ol>
+  <h2>About</h2>
+  <p>
+    This paragraph exists to test truncation. It repeats a long filler sentence several times so the
+    renderer has something to cap. The quick brown fox jumps over the lazy dog and keeps jumping
+    because the fixture needs enough characters to cross the two hundred character text cap used by
+    the compact renderer, which this sentence now safely does.
+  </p>
+  <form action="/search" method="get">
+    <input type="text" name="q" placeholder="Search stories">
+    <input type="hidden" name="csrf" value="abc123">
+    <button type="submit">Search</button>
+  </form>
+  <a href="/newest">newest</a>
+</body>
+</html>

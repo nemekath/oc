@@ -1,0 +1,7 @@
+{
+  "domain": "bing.com",
+  "commands": {
+    "search": { "open": "https://www.bing.com/search?q={query}", "args": ["query"] },
+    "news": { "open": "https://www.bing.com/news/search?q={query}", "args": ["query"] }
+  }
+}
