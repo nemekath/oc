@@ -44,8 +44,9 @@ No setup at all also works: `npx @only-cli/oc` runs without a global install, an
 ```
 oc open <url>          fetch and render a page with numbered actions
 oc do <n>              follow the numbered link [n] from the last page
-oc next                the next budget worth of the page already open
+oc find <query>        where a string appears on the page already open
 oc read <n>            full text of the region at [n], up to 2000 tokens
+oc next                the next budget worth of the page already open
 oc raw [url]           distilled markdown of the whole page
 oc fill <n> <text>     type into a numbered input               (v0.2)
 oc submit [n]          submit a form                            (v0.2)
@@ -57,7 +58,7 @@ Flags: `--budget <tokens>` (default 500, 2000 for `read`), `--json`, `--html` (r
 
 ### Reading past the budget
 
-A 500 token view of a long page is cheap on the first read and expensive on the second, if the only way to see more is the whole page again. So the view says what it left behind, and there are two ways to collect it that are not the whole page:
+A 500 token view of a long page is cheap on the first read and expensive on the second, if the only way to see more is the whole page again. So the view says what it left behind, and there are three ways to collect it that are not the whole page:
 
 ```
 $ oc open https://old.reddit.com/r/linuxquestions/comments/xpznb1/best_terminal_web_browser/
@@ -66,12 +67,13 @@ $ oc open https://old.reddit.com/r/linuxquestions/comments/xpznb1/best_terminal_
 ... 570 more blocks (~4,362 tokens): 'oc next' for the next ~500, 'oc raw' for all
 actions: do <n> | read <n> | next | raw
 
-$ oc next     # the next ~455 tokens, continuing exactly where the view stopped
-$ oc read 80  # that one comment in full, 88 tokens
-$ oc raw      # the whole thread, 9,670 tokens
+$ oc find w3m   # 7 matches with the number to read each by, 115 tokens
+$ oc read 245   # that one comment in full, 88 tokens
+$ oc next       # the next ~455 tokens, continuing exactly where the view stopped
+$ oc raw        # the whole thread, 9,670 tokens
 ```
 
-Neither `next` nor `read` fetches anything: `open` saves the distilled page, so continuing to read it costs one file read. `read <n>` takes one region, which is the block at `[n]` with the couple of blocks that lead into it, or the whole section when `[n]` is a heading. Headings and text blocks long enough to be cut get numbers for exactly this reason, and `... +312 chars` on a line is how much of that block the view did not print.
+None of the three fetches anything: `open` saves the distilled page, so working through it afterwards costs one file read. `find` matches as a phrase, case insensitive, and falls back to the words separately when the phrase is absent. `read <n>` takes one region, which is the block at `[n]` with the couple of blocks that lead into it, or the whole section when `[n]` is a heading. Headings and text blocks long enough to be cut get numbers for exactly this reason, and `... +312 chars` on a line is how much of that block the view did not print.
 
 ## Supported websites
 
@@ -139,7 +141,7 @@ The same six tasks run through OpenAI's Codex CLI (`codex exec`) as well, where 
 
 ## Status
 
-Early. v0.1 covers static pages, budget-aware rendering, and offline tests. Sessions, `oc do <n>`, `oc next`, and `oc read <n>` are in, the rest of the actions (`fill`, `submit`, `find`, `back`) land in v0.2, and a lazy headless fallback for script-heavy pages in v0.3. The design principles and how to contribute are in [CONTRIBUTING.md](CONTRIBUTING.md).
+Early. v0.1 covers static pages, budget-aware rendering, and offline tests. Sessions, `oc do <n>`, `oc find <query>`, `oc read <n>`, and `oc next` are in, the rest of the actions (`fill`, `submit`, `back`) land in v0.2, and a lazy headless fallback for script-heavy pages in v0.3. The design principles and how to contribute are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Known limits, honestly: no JavaScript rendering yet, no sites behind logins yet, and pages behind hard bot challenges may still refuse the tool.
 

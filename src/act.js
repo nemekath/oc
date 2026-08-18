@@ -171,9 +171,85 @@ export function submit(n) {
   throw new NotImplemented('submit');
 }
 
-/** @param {string} query */
-export function find(query) {
-  throw new NotImplemented('find');
+// How much of a matching block to print around the hit. Wide enough to judge
+// whether the match is the one you wanted, narrow enough that twenty hits
+// still fit in a screenful.
+const BEFORE = 60;
+const SNIPPET = 200;
+
+/**
+ * Where a string appears on the current page. This is the answer to "the page
+ * is long and I only care about one thing in it": one command, no fetch, and
+ * a number to read the region it landed in.
+ * @param {string} query
+ * @param {{session?: string, budget?: number}} [opts]
+ * @returns {string}
+ */
+export function find(query, { session = DEFAULT_SESSION, budget = 500 } = {}) {
+  const q = (query ?? '').trim().toLowerCase();
+  if (!q) throw new Error('usage: oc find <query>, searching the page already open');
+  const state = requireBlocks(session);
+  const blocks = state.blocks;
+
+  let hits = search(blocks, [q]);
+  // A phrase that matches nothing is usually word order, not absence, so try
+  // the words separately rather than making the agent guess again.
+  const terms = q.split(/\s+/);
+  const loose = !hits.length && terms.length > 1;
+  if (loose) hits = search(blocks, terms);
+
+  if (!hits.length) {
+    const tried = terms.length > 1 ? ', as a phrase or as separate words' : '';
+    return `no match for "${query}"${tried} in ${blocks.length} blocks on ${state.url}, try fewer words or 'oc raw' for the full text`;
+  }
+
+  const lines = [`${hits.length} ${hits.length === 1 ? 'match' : 'matches'} for "${query}"${loose ? ', matching the words separately' : ''}`];
+  let spent = estimateTokens(lines[0]);
+  let shown = 0;
+  let hasLinks = false;
+  for (const hit of hits) {
+    const line = `[${hit.n ?? '?'}] ${hit.snippet}`;
+    const cost = estimateTokens(line) + 1;
+    if (spent + cost > budget && shown) break;
+    spent += cost;
+    shown++;
+    if (hit.type === 'link') hasLinks = true;
+    lines.push(line);
+  }
+  if (shown < hits.length) {
+    lines.push(`... ${hits.length - shown} more matches, narrow the query or raise --budget`);
+  }
+  lines.push(`actions: ${[hasLinks && 'do <n>', 'read <n>', 'next', 'raw'].filter(Boolean).join(' | ')}`);
+  return lines.join('\n');
+}
+
+/**
+ * Blocks containing every term, each with the piece of text around the first
+ * one and a number to read it with. A phrase search is the same thing with a
+ * single term. Short blocks carry no handle of their own, so they borrow the
+ * nearest one above them, which is what `oc read` needs to put the match back
+ * in context.
+ * @param {import('./distill.js').Block[]} blocks
+ * @param {string[]} terms - lower case, all of them must appear
+ */
+function search(blocks, terms) {
+  const out = [];
+  let anchor = null;
+  for (const block of blocks) {
+    if (block.n != null) anchor = block.n;
+    const text = block.text.toLowerCase();
+    const found = terms.map((t) => text.indexOf(t));
+    if (found.some((i) => i < 0)) continue;
+    const n = block.n ?? anchor;
+    // One number, one line: a run of short blocks under the same handle would
+    // otherwise report the same place several times.
+    if (out.length && out.at(-1).n === n) continue;
+    const start = Math.max(0, Math.min(...found) - BEFORE);
+    const end = Math.min(block.text.length, start + SNIPPET);
+    const snippet = `${start > 0 ? '... ' : ''}${block.text.slice(start, end)}${end < block.text.length ? ' ...' : ''}`;
+    out.push({ n, type: block.type, snippet });
+  }
+  return out;
 }
 
 export function back() {

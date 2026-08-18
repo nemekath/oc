@@ -12,6 +12,7 @@ No install needed, run it with npx:
 ```
 npx @only-cli/oc open <url>     compact view with numbered elements
 npx @only-cli/oc do <n>         follow numbered link [n] from the last page
+npx @only-cli/oc find <query>   where a string appears on the page already open
 npx @only-cli/oc next           the next ~500 tokens of the page already open
 npx @only-cli/oc read <n>       full text of the region at [n]
 npx @only-cli/oc raw [url]      whole page as markdown (add --html for cleaned HTML)
@@ -27,19 +28,23 @@ npx @only-cli/oc raw [url]      whole page as markdown (add --html for cleaned H
 
 ## Reading more of a page
 
-Three ways to go past the first view, cheapest first. Pick by what you need, not by habit.
+Four ways to go past the first view, cheapest first. Pick by what you need, not by habit.
 
-- `oc next` prints the next budget worth of the same page and remembers where it stopped, so calling it again continues. This is the right answer for "the answer is further down": a comment thread, a long article, a list that ran past the cut.
-- `oc read <n>` prints one region in full: the block at `[n]` with a little context, or the whole section when `[n]` is a heading. Use it when the view shows you exactly the block you want and it was cut.
+- `oc find <query>` prints every place a string appears on the page, one line each with the number to read it by. When you know what you are looking for, this is the whole job in one command.
+- `oc read <n>` prints one region in full: the block at `[n]` with a little context, or the whole section when `[n]` is a heading. Use it when the view or a `find` hit shows you exactly the block you want.
+- `oc next` prints the next budget worth of the same page and remembers where it stopped, so calling it again continues. Use it when you are reading rather than looking something up.
 - `oc raw` (no URL needed once a page is open) prints everything. It costs an order of magnitude more, so use it when you genuinely need the whole page.
 
-Measured on one Reddit thread: `open` 475 tokens, each `next` about 455, one `read` 88, `raw` 9,670. Neither `next` nor `read` fetches anything; they work from the page `open` already saved.
+Measured on one Reddit thread: `open` 475 tokens, one `find` 115, one `read` 88, each `next` about 455, `raw` 9,670. None of them fetches anything; they all work from the page `open` already saved.
 
 ```
 oc open https://old.reddit.com/r/linuxquestions/comments/xpznb1/best_terminal_web_browser/
-oc next                         -> the comments, 455 tokens at a time
-oc read 180                     -> that one comment in full, 88 tokens
+oc find w3m                     -> 7 matches with their numbers, 115 tokens
+oc read 245                     -> that comment in full, 88 tokens
+oc next                         -> keep reading, 455 tokens at a time
 ```
+
+`find` matches the query as a phrase, case insensitive, and falls back to matching the words separately when the phrase is not there. It says how many matches it held back if they did not fit the budget.
 
 ## Following links
 

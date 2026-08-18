@@ -9,7 +9,7 @@ import { join } from 'node:path';
 process.env.OC_HOME = mkdtempSync(join(tmpdir(), 'oc-test-'));
 
 const { distill } = await import('../src/distill.js');
-const { activate, read, next } = await import('../src/act.js');
+const { activate, read, next, find } = await import('../src/act.js');
 const { sessionFromPage, saveSession, loadSession, resolveHref } = await import('../src/session.js');
 const { render } = await import('../src/render.js');
 
@@ -66,6 +66,41 @@ test('read and next explain themselves when the number or the page is missing', 
   assert.throws(() => read(9999), /no \[9999\].*oc open/s);
   assert.throws(() => read(0), /usage: oc read <n>/);
   assert.throws(() => read(1, { session: 'never-opened' }), /oc open <url>' first/);
+});
+
+test('find reports where a string is, with a number to read it by', () => {
+  open();
+  const out = find('postgres');
+  assert.ok(out.startsWith('1 match for "postgres"'));
+  assert.ok(out.includes('[4] Postgres 18 released'), `wrong hit line:\n${out}`);
+  assert.ok(out.includes('actions: do <n>'), 'a link hit should offer do');
+});
+
+test('find opens the snippet on the match, not on the start of a long block', () => {
+  open();
+  const out = find('lazy dog');
+  assert.match(out, /\[9\] \.\.\. .*lazy dog/);
+  assert.ok(out.length < 400, `snippet was not trimmed:\n${out}`);
+});
+
+test('a phrase that matches nothing falls back to the words, and says so', () => {
+  open();
+  const out = find('dog quick');
+  assert.ok(out.includes('matching the words separately'));
+  assert.ok(out.includes('[9]'));
+  assert.match(find('nothing here at all'), /no match .* as a phrase or as separate words/);
+});
+
+test('find caps its own output and says how many it held back', () => {
+  open();
+  const out = find('comments', { budget: 12 });
+  assert.match(out, /\.\.\. \d+ more matches/);
+});
+
+test('find needs a query and a page', () => {
+  open();
+  assert.throws(() => find('  '), /usage: oc find <query>/);
+  assert.throws(() => find('x', { session: 'never-opened' }), /oc open <url>' first/);
 });
 
 test('next continues where the budget stopped, then says the page is done', () => {

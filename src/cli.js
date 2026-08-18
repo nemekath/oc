@@ -11,13 +11,13 @@ const HELP = `only-cli: the web as a compact terminal, built for AI agents.
 usage: oc <command> [args] [flags]
 
   open <url>          fetch and render a page with numbered actions
+  find <query>        where a string appears on the page already open
   next                the next budget worth of the page already open
   read <n>            full text of the region at [n], up to 2000 tokens
   raw [url]           distilled markdown of the whole page
   do <n>              follow the numbered link [n] from the last page
   fill <n> <text>     type into a numbered input               (v0.2)
   submit [n]          submit a form                            (v0.2)
-  find <query>        search visible text on the current page  (v0.2)
   back                return to the previous page              (v0.2)
   session ls|rm       manage saved sessions                    (v0.2)
 
@@ -129,9 +129,9 @@ async function main() {
     }
     case 'read': return console.log(act.read(Number(args[0]), { session: sessionName, budget: asked || 2000 }));
     case 'next': return console.log(act.next({ session: sessionName, budget: asked || 500 }));
+    case 'find': return console.log(act.find(args.join(' '), { session: sessionName, budget: asked || 500 }));
     case 'fill': return act.fill(Number(args[0]), args.slice(1).join(' '));
     case 'submit': return act.submit(args[0] ? Number(args[0]) : undefined);
-    case 'find': return act.find(args.join(' '));
     case 'back': return act.back();
     case 'session': throw new act.NotImplemented('session');
     default:
