@@ -1,0 +1,13 @@
+# Keep the three runtime deps and the CI actions patched. Dependabot opens
+# PRs; CI runs the offline test suite against them before anything merges.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
