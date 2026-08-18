@@ -4,6 +4,7 @@ import { fetchPage } from './fetch.js';
 import { distill, toMarkdown, toHTML } from './distill.js';
 import { render, estimateTokens } from './render.js';
 import * as act from './act.js';
+import { DEFAULT_SESSION, loadSession, saveSession, sessionFromPage } from './session.js';
 
 const HELP = `only-cli: the web as a compact terminal, built for AI agents.
 
@@ -11,7 +12,7 @@ usage: oc <command> [args] [flags]
 
   open <url>          fetch and render a page with numbered actions
   raw <url>           distilled markdown of the whole page
-  do <n>              activate a numbered element              (v0.2)
+  do <n>              follow the numbered link [n] from the last page
   fill <n> <text>     type into a numbered input               (v0.2)
   submit [n]          submit a form                            (v0.2)
   read [n]            full text of one region                  (v0.2)
@@ -27,7 +28,20 @@ flags:
                       status and client identity, timing, transfer size, and
                       memory. --stats is an alias; OC_VERBOSE=1 turns it on
                       globally. Off by default because metrics cost tokens too.
-  --session <name>    named session                            (v0.2)`;
+  --session <name>    keep separate page state under a name (default: default)
+
+'oc open' remembers the numbered elements it printed, so 'oc do 3' follows
+link [3] without you ever handling its URL. State lives in ~/.only-cli
+(override with OC_HOME).`;
+
+// A rendered page has to be remembered or its [3] means nothing to the next
+// command. Saving state must never break a render, so a home directory that
+// cannot be written costs the agent `do` and nothing else.
+const remember = (page, name) => {
+  try {
+    saveSession(name, sessionFromPage(page, loadSession(name)));
+  } catch {}
+};
 
 // What browsing costs without this tool is the raw page HTML in context.
 const savings = (out, raw) =>
@@ -57,10 +71,17 @@ async function main() {
     return;
   }
 
+  const sessionName = values.session || DEFAULT_SESSION;
+
   switch (command) {
     case 'open':
+    case 'do':
     case 'raw': {
-      const url = args[0];
+      // `do` is `open` with the URL looked up from the last render instead of
+      // typed, so both commands share one fetch, render, and save path.
+      const url = command === 'do'
+        ? act.activate(Number(args[0]), { session: sessionName }).url
+        : args[0];
       if (!url) throw new Error(`usage: oc ${command} <url>`);
       const budget = values.budget ? Number(values.budget) : 500;
       if (!Number.isFinite(budget) || budget <= 0) throw new Error('--budget must be a positive number');
@@ -74,7 +95,9 @@ async function main() {
           + `${Math.round(html.length / 1024)}KB transferred, ${Math.round(rss / 1048576)}MB memory`;
       };
       if (values.json) {
-        console.log(JSON.stringify(distill(html, finalUrl)));
+        const page = distill(html, finalUrl);
+        remember(page, sessionName);
+        console.log(JSON.stringify(page));
         if (verbose) console.error(resources());
         return;
       }
@@ -86,6 +109,7 @@ async function main() {
         return;
       }
       const page = distill(html, finalUrl);
+      remember(page, sessionName);
       const { text, stats } = render(page, { budget });
       console.log(text);
       if (verbose) {
@@ -93,7 +117,6 @@ async function main() {
       }
       return;
     }
-    case 'do': return act.activate(Number(args[0]));
     case 'fill': return act.fill(Number(args[0]), args.slice(1).join(' '));
     case 'submit': return act.submit(args[0] ? Number(args[0]) : undefined);
     case 'read': return act.read(args[0] ? Number(args[0]) : undefined);

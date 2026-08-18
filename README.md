@@ -43,13 +43,15 @@ No setup at all also works: `npx @only-cli/oc` runs without a global install, an
 
 ```
 oc open <url>          fetch and render a page with numbered actions
+oc do <n>              follow the numbered link [n] from the last page
 oc raw <url>           distilled markdown of the whole page
-oc do <n>              activate a numbered element              (v0.2)
 oc fill <n> <text>     type into a numbered input               (v0.2)
 oc submit [n]          submit a form                            (v0.2)
 ```
 
-Flags: `--budget <tokens>` (default 500), `--json`, `--html` (raw as cleaned HTML instead of markdown), `--verbose`/`-v` (metrics on stderr: tokens saved vs the page HTML, HTTP status and client identity, timing, transfer size, memory; alias `--stats`, or export `OC_VERBOSE=1`). Metrics are off by default because they cost tokens too; agents should pass `--verbose` only when running verbosely.
+Flags: `--budget <tokens>` (default 500), `--json`, `--html` (raw as cleaned HTML instead of markdown), `--session <name>` (separate page state per name), `--verbose`/`-v` (metrics on stderr: tokens saved vs the page HTML, HTTP status and client identity, timing, transfer size, memory; alias `--stats`, or export `OC_VERBOSE=1`). Metrics are off by default because they cost tokens too; agents should pass `--verbose` only when running verbosely.
+
+`oc open` remembers the elements it numbered, so `oc do 3` follows `[3]` without the agent ever handling a URL. That state is a small JSON file per session under `~/.only-cli` (override the directory with `OC_HOME`); there is no daemon and no background browser. Links that search engines wrap in a tracking redirect resolve to the real destination, so `do` on a result works like a click.
 
 ## Supported websites
 
@@ -67,7 +69,7 @@ only-cli works on any mostly-static website with no per-site setup: news sites, 
 
 The engine also renders Atom and RSS feeds as regular pages. That is how Stack Overflow works: the site serves every HTML page a Cloudflare challenge, but publishes full question and answer bodies under `/feeds`, so `oc open stackoverflow.com/feeds/question/11227809` returns the question and its top answers in about 500 tokens. The same trick applies to any site that gates its pages but leaves its feeds open.
 
-Not supported yet: pages that only render with JavaScript (a headless fallback is planned for v0.3), sites behind logins (sessions land in v0.2), and sites with hard bot challenges that do not expose feeds. Adding a site shortcut is a small JSON file; see [CONTRIBUTING.md](CONTRIBUTING.md).
+Not supported yet: pages that only render with JavaScript (a headless fallback is planned for v0.3), sites behind logins (page state is saved, cookies are not, so logins land in v0.2), and sites with hard bot challenges that do not expose feeds. Adding a site shortcut is a small JSON file; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Benchmarks
 
@@ -111,13 +113,13 @@ jina-reader    ##################                         855,243 tokens  30 tur
 playwright-mcp ##################################        1,575,695 tokens  48 turns
 ```
 
-Each session gets a skill documenting its tool, so every condition runs at its best. Two results are worth stating plainly. oc and lynx were the only tools that returned real content on every task: Reddit served Jina Reader and Playwright MCP a 403, so both "answered" that task by reporting the block, and raw curl burned its full turn budget there and on the GitHub search, roughly 400k tokens each, and returned nothing. But lynx, not oc, took the token and cost columns this round, and the reason is a missing feature. The compact view leaves link URLs out to save tokens, and `oc do <n>` does not ship until v0.2, so an agent following a link has to re-fetch the page as `oc open --json` or `oc raw` just to learn where `[15]` points, while `lynx -dump` prints a references list for free. That tax is most of the gap on the multi-step tasks. Activatable numbered actions are the fix and the point of v0.2.
+Each session gets a skill documenting its tool, so every condition runs at its best. Two results are worth stating plainly. oc and lynx were the only tools that returned real content on every task: Reddit served Jina Reader and Playwright MCP a 403, so both "answered" that task by reporting the block, and raw curl burned its full turn budget there and on the GitHub search, roughly 400k tokens each, and returned nothing. But lynx, not oc, took the token and cost columns this round, and the reason was a missing feature. The compact view leaves link URLs out to save tokens, and the version under test had no way to follow one, so an agent had to re-fetch the page as `oc open --json` or `oc raw` just to learn where `[15]` points, while `lynx -dump` prints a references list for free. That tax is most of the gap on the multi-step tasks. `oc do <n>` has since landed and closes it: following a Hacker News story into its comments now costs about 3k characters instead of the roughly 23k the re-fetch route spent. The next benchmark run will say whether that is enough to take the column.
 
 The same six tasks run through OpenAI's Codex CLI (`codex exec`) as well, where oc comes out ahead: of the two tools that returned real content on all six tasks, oc spent 287,862 tokens and lynx 408,548, and Playwright MCP spent 699,810 on the Reddit thread alone. Codex's per-session overhead is much smaller than Claude Code's, so the two agents are compared within their own tables rather than against each other. The benchmark repo has per-task numbers, per-tier breakdowns, methodology, and instructions for adding other tools and models.
 
 ## Status
 
-Early. v0.1 covers static pages, budget-aware rendering, and offline tests. Sessions and actions land in v0.2, a lazy headless fallback for script-heavy pages in v0.3. The design principles and how to contribute are in [CONTRIBUTING.md](CONTRIBUTING.md).
+Early. v0.1 covers static pages, budget-aware rendering, and offline tests. Sessions and `oc do <n>` are in, the rest of the actions (`fill`, `submit`, `read`, `find`, `back`) land in v0.2, and a lazy headless fallback for script-heavy pages in v0.3. The design principles and how to contribute are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Known limits, honestly: no JavaScript rendering yet, no sites behind logins yet, and pages behind hard bot challenges may still refuse the tool.
 

@@ -11,6 +11,7 @@ No install needed, run it with npx:
 
 ```
 npx @only-cli/oc open <url>     compact view with numbered elements
+npx @only-cli/oc do <n>         follow numbered link [n] from the last page
 npx @only-cli/oc raw <url>      whole page as markdown (add --html for cleaned HTML)
 ```
 
@@ -21,9 +22,24 @@ npx @only-cli/oc raw <url>      whole page as markdown (add --html for cleaned H
 - The `actions:` line at the bottom lists valid next commands.
 - `... N more blocks over budget` means content was cut to stay cheap. Rerun with `--budget 1500` if you need more, or use `raw` for everything.
 
-## Following links (current version)
+## Following links
 
-`do <n>` and the other action commands land in v0.2. Until then: run `raw <url>` to see each link's href in markdown form, then `open` that URL directly.
+Use `do <n>`. The compact view leaves link URLs out because they cost tokens and you do not need them, so to open `[15] 41 comments` run `oc do 15`. It renders the new page exactly like `open` does, and the numbers then refer to that new page.
+
+```
+oc open news.ycombinator.com    ->  [15] 41 comments
+oc do 15                        ->  the comment thread, renumbered
+```
+
+Notes that save a round trip:
+
+- Numbers come from the most recent render, so re-read the newest output before choosing one. Any command that renders a page renumbers.
+- Handles hidden behind a `[6-9] 4 similar links` marker still work, even though their text was collapsed.
+- Search result links resolve to the destination, not the search engine's tracking redirect.
+- `do` on an input or a button says so; typing and submitting are not available yet.
+- `--session <name>` keeps separate page state, for working on two sites at once.
+
+Reach for `raw <url>` when you need the whole page text, not to hunt for a URL.
 
 ## Flags
 
