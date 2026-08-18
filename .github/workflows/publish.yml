@@ -2,12 +2,28 @@
 # One-time setup on npmjs.com after the package exists: package settings,
 # Trusted Publisher, GitHub Actions, repository only-cli/only-cli, workflow
 # file publish.yml. From then on, publishing a GitHub release ships to npm.
+#
+# Release channels map to npm dist-tags:
+#   latest  stable releases, what `npm install only-cli` gets
+#   beta    release candidates, version like 0.2.0-beta.1
+#   alpha   earlier previews, version like 0.2.0-alpha.1
+#   dev     throwaway builds from main, version stamped per run
+#
+# A GitHub release picks its channel from the version suffix, so marking a
+# release 0.2.0-beta.1 ships to beta automatically. Run the workflow by hand
+# (Actions tab, publish, Run workflow) to cut a dev build without a release.
 name: publish
 
 on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      channel:
+        description: npm dist-tag to publish under
+        type: choice
+        options: [dev, alpha, beta, latest]
+        default: dev
 
 permissions:
   contents: read
@@ -26,4 +42,27 @@ jobs:
       - run: npm install -g npm@latest
       - run: npm ci
       - run: npm test
-      - run: npm publish --access public
+      - name: pick channel and version
+        run: |
+          V=$(node -p "require('./package.json').version")
+          CHANNEL="${{ github.event_name == 'workflow_dispatch' && inputs.channel || '' }}"
+          if [ -z "$CHANNEL" ]; then
+            case "$V" in
+              *-alpha*) CHANNEL=alpha ;;
+              *-beta*)  CHANNEL=beta ;;
+              *-dev*)   CHANNEL=dev ;;
+              *)        CHANNEL=latest ;;
+            esac
+          fi
+          # Fail loud instead of shipping a prerelease as stable.
+          if [ "$CHANNEL" = latest ] && [ "${V#*-}" != "$V" ]; then
+            echo "refusing to publish prerelease version $V to latest" >&2
+            exit 1
+          fi
+          # Dev builds get a unique version per run so repeat publishes never
+          # collide; the version in git stays untouched.
+          if [ "$CHANNEL" = dev ] && [ "${V%-dev*}" = "$V" ]; then
+            npm version --no-git-tag-version "${V%%-*}-dev.${{ github.run_number }}"
+          fi
+          echo "CHANNEL=$CHANNEL" >> "$GITHUB_ENV"
+      - run: npm publish --access public --tag "$CHANNEL"
