@@ -34,7 +34,7 @@ The fastest setup is one line in your agent's instructions file (CLAUDE.md, AGEN
 Claude Code users can install the skill instead: copy `skills/only-cli/` into your project's `.claude/skills/` directory (or `~/.claude/skills/` to enable it everywhere). A skill costs almost no tokens until the agent actually invokes it, which fits how this whole project thinks. The same skill also installs through the [skills.sh](https://skills.sh) directory into Claude Code, Cursor, Codex, Copilot, and others:
 
 ```
-npx skills add only-cli/oc
+npx skills add only-cli/only-cli
 ```
 
 No setup at all also works: `npx only-cli` runs without a global install, and the tool teaches its own command surface through `--help`, the `actions:` line at the bottom of every render, and error messages that name the next command to run.

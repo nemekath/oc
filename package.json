@@ -28,11 +28,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/only-cli/oc.git"
+    "url": "git+https://github.com/only-cli/only-cli.git"
   },
-  "homepage": "https://github.com/only-cli/oc#readme",
+  "homepage": "https://github.com/only-cli/only-cli#readme",
   "bugs": {
-    "url": "https://github.com/only-cli/oc/issues"
+    "url": "https://github.com/only-cli/only-cli/issues"
   },
   "dependencies": {
     "linkedom": "^0.18.12",
