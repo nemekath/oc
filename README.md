@@ -113,6 +113,8 @@ playwright-mcp ##############################             491,779 tokens  18 tur
 
 Each session gets a skill documenting its tool, so every condition runs at its best. oc finished all three tasks at the lowest cost of any full-success condition, and oc and lynx were the only tools whose answers were real content on every task: Jina Reader and Playwright MCP answered the Reddit task by reporting that Reddit blocks them, while raw curl burned its whole 13-turn budget there, roughly 400k tokens and twenty cents, and returned nothing. Totals include Claude Code's own per-session overhead, so compare rows, not absolutes. The benchmark repo has per-task numbers, methodology, and instructions for adding other tools and models.
 
+The same three tasks through OpenAI's Codex CLI (`codex exec` on gpt-5.6-sol) tell the same story with sharper edges: oc finished 3/3 on 110,551 tokens and 8 tool calls, while raw curl needed 46 tool calls and 978,663 tokens, 872k of them ground out on the Reddit task alone, and Jina Reader and Playwright MCP again answered Reddit by reporting the block. Codex's session overhead is much smaller than Claude Code's, so its totals are not comparable to the rows above; the full codex table is in the benchmark repo.
+
 ## Status
 
 Early. v0.1 covers static pages, budget-aware rendering, and offline tests. Sessions and actions land in v0.2, a lazy headless fallback for script-heavy pages in v0.3. The design principles and how to contribute are in [CONTRIBUTING.md](CONTRIBUTING.md).
