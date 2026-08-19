@@ -35,7 +35,12 @@ Add one line to your agent's instructions file (CLAUDE.md, AGENTS.md, or equival
 
 > When you need content from a web page, run `npx @only-cli/oc open <url>` instead of fetching raw HTML. Run `npx @only-cli/oc --help` once to learn the commands.
 
-Claude Code users can install the skill instead: copy `skills/only-cli/` into `.claude/skills/`, or run `npx skills add only-cli/oc`, which also works in Cursor, Codex, Copilot, and others via [skills.sh](https://skills.sh).
+Claude Code users can install the skill instead: copy `skills/only-cli/` into `.claude/skills/`, run `npx skills add only-cli/oc` (which also works in Cursor, Codex, Copilot, and others via [skills.sh](https://skills.sh)), or add it as a plugin:
+
+```
+/plugin marketplace add only-cli/oc
+/plugin install only-cli@only-cli
+```
 
 No setup at all also works: `npx @only-cli/oc` runs without a global install, and teaches its own commands through `--help` and the `actions:` line on every render.
 
