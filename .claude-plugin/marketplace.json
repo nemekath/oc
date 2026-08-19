@@ -1,0 +1,14 @@
+{
+  "name": "only-cli",
+  "owner": { "name": "only-cli" },
+  "plugins": [
+    {
+      "name": "only-cli",
+      "source": { "source": "github", "repo": "only-cli/oc" },
+      "description": "Browse websites from the terminal in a few hundred tokens",
+      "version": "0.2.0",
+      "homepage": "https://github.com/only-cli/oc",
+      "license": "MIT"
+    }
+  ]
+}
