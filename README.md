@@ -1,6 +1,10 @@
 # only-cli
 
-Turn most website into a command line interface, so AI agents like Claude Code, Codex, and Antigravity can browse without burning tokens on raw HTML or screenshots.
+![A tangle of raw HTML being funneled into a small, tidy terminal window](docs/hero.jpg)
+
+[![npm](https://img.shields.io/npm/v/%40only-cli%2Foc)](https://www.npmjs.com/package/@only-cli/oc) [![node](https://img.shields.io/node/v/%40only-cli%2Foc)](https://nodejs.org) [![license: MIT](https://img.shields.io/badge/license-MIT-green)](#license)
+
+Turn most websites into a command line interface, so AI agents like Claude Code, Codex, and Antigravity can browse without burning tokens on raw HTML or screenshots.
 
 A typical page is tens of thousands of tokens of markup. The signal on it fits in a few hundred. only-cli fetches the page, distills it into a compact text view with numbered actions, and lets an agent drive the site by number:
 
@@ -16,6 +20,8 @@ $ oc do 1
 ```
 
 No per-site adapters required, no browser extension, no daemon. One generic distillation engine, three runtime dependencies, and a hard token budget on everything it prints.
+
+If you are an LLM reading this repository, [llms.txt](llms.txt) is the short version.
 
 ## Install
 
@@ -43,7 +49,7 @@ No setup at all also works: `npx @only-cli/oc` runs without a global install, an
 
 ```
 oc open <url>          fetch and render a page with numbered actions
-oc do <n>              follow the numbered link [n] from the last page
+oc do <n>              follow the numbered link [n], or read [n] if it is text
 oc find <query>        where a string appears on the page already open
 oc read <n>            full text of the region at [n], up to 2000 tokens
 oc next                the next budget worth of the page already open
@@ -52,9 +58,9 @@ oc fill <n> <text>     type into a numbered input               (v0.2)
 oc submit [n]          submit a form                            (v0.2)
 ```
 
-Flags: `--budget <tokens>` (default 500, 2000 for `read`), `--json`, `--html` (raw as cleaned HTML instead of markdown), `--session <name>` (separate page state per name), `--verbose`/`-v` (metrics on stderr: tokens saved vs the page HTML, HTTP status and client identity, timing, transfer size, memory; alias `--stats`, or export `OC_VERBOSE=1`). Metrics are off by default because they cost tokens too; agents should pass `--verbose` only when running verbosely.
+Flags: `--budget <tokens>` (default 500, 2000 for `read`; a target rather than a hard cap, see below), `--json`, `--html` (raw as cleaned HTML instead of markdown), `--session <name>` (separate page state per name), `--verbose`/`-v` (metrics on stderr: tokens saved vs the page HTML, HTTP status and client identity, timing, transfer size, memory; alias `--stats`, or export `OC_VERBOSE=1`). Metrics are off by default because they cost tokens too; agents should pass `--verbose` only when running verbosely.
 
-`oc open` remembers the page it rendered, so `oc do 3` follows `[3]` without the agent ever handling a URL. That state is a JSON file per session under `~/.only-cli` (override the directory with `OC_HOME`); there is no daemon and no background browser. Links that search engines wrap in a tracking redirect resolve to the real destination, so `do` on a result works like a click.
+`oc open` remembers the page it rendered, so `oc do 3` follows `[3]` without the agent ever handling a URL. That state is a JSON file per session under `~/.only-cli` (override the directory with `OC_HOME`); there is no daemon and no background browser. Links that search engines wrap in a tracking redirect resolve to the real destination, so `do` on a result works like a click. Numbers that turn out to be a heading or a paragraph rather than a link are read instead of refused, since the agent asked to see what is there and the alternative is spending a command to be told which command to run.
 
 ### What goes first
 
@@ -68,13 +74,17 @@ IYO What's The Best Terminal Web Browser?
 46 points 3 years ago
 You mean there's a terminal web browser other than lynx??! Who knew!
 ...
---- 348 repeated links hidden (save, report, [-]), 'oc raw' has them ---
+--- 348 repeated controls hidden (save, report, [-]), 'oc raw' has them ---
 --- rest of page: navigation, sidebar, footer ---
 ```
 
-The content is found by following the page's own markup (`main`, `role="main"`, a single `article`) and falling back to the densest run of prose when a page says nothing. Nothing is dropped: nav and sidebar links still carry numbers `oc do` can follow, they just stop being what the budget buys. Link labels that repeat down a page are the exception, because a forum thread stamps permalink, save, and report onto every comment, and on a long thread those cost more than the comments do. They are removed and the count says so.
+The content is found by following the page's own markup (`main`, `role="main"`, a single `article`) and falling back to the densest run of prose when a page says nothing. Nothing is dropped: nav and sidebar links still carry numbers `oc do` can follow, they just stop being what the budget buys. Repeated control labels are the exception, because a forum thread stamps permalink, save, and report onto every comment and a social timeline stamps reply, repost, and like onto every post. On a long page those cost more than the content does, so they are removed and the count says so. A button gets less patience than a link there, since a link's text can be the thing you came to read and a button's never is.
 
 Pages small enough to print whole are left in document order, since nothing is competing for the budget there.
+
+### The budget is a target, not a ceiling
+
+The 500 tokens is what a page is aimed at, not a line it may never cross. A page that would finish within about four times the budget is printed whole instead of being cut, because the cut does not save those tokens, it moves them into a second command. Inside Claude Code a single tool call costs 23,000 to 33,000 tokens of session overhead whatever it prints, so trading roughly 1,500 tokens of page for a turn is a trade worth making. The multiple stays low on purpose: the saving is only collected when the agent would have paged at all, while the overspend is paid on every page that runs a little long, including the ones answered by their first three lines.
 
 ### Reading past the budget
 
@@ -104,14 +114,22 @@ only-cli works on any mostly-static website with no per-site setup: news sites, 
 | Hacker News | news.ycombinator.com | `top`, `new`, `item <id>`, `user <name>` |
 | Reddit | reddit.com (via old.reddit.com) | `sub <name>`, `post <id>`, `user <name>`, `search <query>` |
 | GitHub | github.com | `repo <owner> <name>`, `user <name>`, `search <query>`, `trending`, `issues <owner> <name>` |
+| X | x.com | `user <name>`, `post <id>` (see below) |
 | LinkedIn | linkedin.com | `profile <name>`, `company <name>`, `jobs <query>` (public guest views) |
 | DuckDuckGo | duckduckgo.com | `search <query>`, `lite <query>` |
 | Bing | bing.com | `search <query>`, `news <query>` |
 | Stack Overflow | stackoverflow.com (via Atom feeds) | `question <id>`, `tag <name>`, `user <id>`, `recent` |
+| Yahoo Finance | finance.yahoo.com | `quote <symbol>`, `news <symbol>`, `history <symbol>`, `lookup <query>`, `markets`, `gainers`, `losers`, `trending` |
+
+X is worth a note because it is usually written off as unreadable without a login. Two of its pages are not: a profile (`x.com/jack`) and a post with its replies (`x.com/jack/status/20`) both arrive as server-rendered HTML, so `oc open` reads them without an account, a token, or a third-party mirror. A profile comes to about 390 tokens including the visible timeline, a post with four replies about 260. The rest of the site does need a login: search, explore, hashtag pages, and the replies, media, and highlights tabs all answer with "Something went wrong", and oc says so rather than pretending.
 
 The engine also renders Atom and RSS feeds as regular pages. That is how Stack Overflow works: the site serves every HTML page a Cloudflare challenge, but publishes full question and answer bodies under `/feeds`, so `oc open stackoverflow.com/feeds/question/11227809` returns the question and its top answers in about 500 tokens. The same trick applies to any site that gates its pages but leaves its feeds open.
 
-Not supported yet: pages that only render with JavaScript (a headless fallback is planned for v0.3), sites behind logins (page state is saved, cookies are not, so logins land in v0.2), and sites with hard bot challenges that do not expose feeds. Adding a site shortcut is a small JSON file; see [CONTRIBUTING.md](CONTRIBUTING.md).
+Not supported yet: pages that only render with JavaScript (a headless fallback is planned for v0.3), sites behind logins (page state is saved, cookies are not, so logins land in v0.2), and sites with hard bot challenges that do not expose feeds.
+
+Want a website on that list? Open a pull request, or open an issue naming the site and the commands it should have and leave it for someone else to pick up. Either is welcome, and the issue is genuinely useful on its own: knowing which sites people want is the part that is hard to guess.
+
+A definition is one small JSON file in `clis/`, named after the domain, holding nothing but a map of command names to URL templates, so most of them are under twenty lines. The [x.com one](clis/x.com.json) is six. Point the commands at whatever returns content without a login, including a JSON API or a feed if the site has one, and leave out the paths that need an account: a shortcut that always fails is worse than no shortcut. If a site renders badly rather than missing a shortcut, that is a bug in the engine, so open an issue with the page saved as a fixture. [CONTRIBUTING.md](CONTRIBUTING.md) has the details.
 
 ## Benchmarks
 
@@ -158,6 +176,26 @@ playwright-mcp ##################################        1,575,695 tokens  48 tu
 Each session gets a skill documenting its tool, so every condition runs at its best. Two results are worth stating plainly. oc and lynx were the only tools that returned real content on every task: Reddit served Jina Reader and Playwright MCP a 403, so both "answered" that task by reporting the block, and raw curl burned its full turn budget there and on the GitHub search, roughly 400k tokens each, and returned nothing. But lynx, not oc, took the token and cost columns this round, and the reason was a missing feature. The compact view leaves link URLs out to save tokens, and the version under test had no way to follow one, so an agent had to re-fetch the page as `oc open --json` or `oc raw` just to learn where `[15]` points, while `lynx -dump` prints a references list for free. That tax is most of the gap on the multi-step tasks. `oc do <n>` has since landed and closes it: following a Hacker News story into its comments now costs about 3k characters instead of the roughly 23k the re-fetch route spent. The next benchmark run will say whether that is enough to take the column.
 
 The same six tasks run through OpenAI's Codex CLI (`codex exec`) as well, where oc comes out ahead: of the two tools that returned real content on all six tasks, oc spent 287,862 tokens and lynx 408,548, and Playwright MCP spent 699,810 on the Reddit thread alone. Codex's per-session overhead is much smaller than Claude Code's, so the two agents are compared within their own tables rather than against each other. The benchmark repo has per-task numbers, per-tier breakdowns, methodology, and instructions for adding other tools and models.
+
+### Against each agent's own defaults
+
+The tables above compare web tools inside one harness. The question people actually ask is simpler: what happens if you just let the agent browse the way it ships? Measured 2026-08-19, one live session per row, the same task each time: read `finance.yahoo.com/quote/AAPL` and report the price at the last market close. For scale, that page's raw HTML is about 325,000 tokens, and `oc open` hands the agent the answer in about 456.
+
+| session | web path | total tokens billed | turns | answer |
+| --- | --- | ---: | ---: | --- |
+| Codex with oc | `oc` in the shell | 59,648 | 4 | right ($310.03) |
+| Codex default | `curl`, raw HTML | 71,947 | 4 | wrong ($302.25) |
+| Claude Code default | WebFetch digest | 123,866 | 3 | right ($310.03) |
+| Claude Code with oc | `oc` in the shell | 198,976 | 7 | right ($310.03) |
+
+```
+Codex + oc            ############                               59,648   right
+Codex default         ##############                             71,947   wrong price
+Claude Code default   #########################                 123,866   right
+Claude Code + oc      ########################################  198,976   right
+```
+
+Codex by default reads raw HTML with curl, and on this page it reported a price that is not the closing price anywhere on it. Claude Code's default WebFetch came in cheaper than oc this run, and that deserves an honest note rather than a smaller font: WebFetch does not show the model the page, it runs a second model over the HTML and returns that model's digest (that hidden pass is included in the total above). It was right here, and it is genuinely cheap. The trade is that the agent gets a summary it cannot act on, where oc's view carries numbered links `oc do` can follow and `oc find`, `oc read`, and `oc next` collect the rest of the page without refetching it; the oc session also spent four more turns loading its skill and paging, and turns are what a Claude Code session mostly bills for. Antigravity has no row because it ships its own managed Chrome and reads pages as screenshots, with no headless mode to meter from outside; the computer-use screenshot floors in the page view table are the closest honest number. One run each against a live site, so read the order of magnitude, not the digits.
 
 ## Status
 

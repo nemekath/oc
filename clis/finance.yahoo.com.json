@@ -1,0 +1,13 @@
+{
+  "domain": "finance.yahoo.com",
+  "commands": {
+    "quote": { "open": "https://finance.yahoo.com/quote/{symbol}", "args": ["symbol"] },
+    "news": { "open": "https://finance.yahoo.com/quote/{symbol}/news", "args": ["symbol"] },
+    "history": { "open": "https://finance.yahoo.com/quote/{symbol}/history", "args": ["symbol"] },
+    "lookup": { "open": "https://finance.yahoo.com/lookup?s={query}", "args": ["query"] },
+    "markets": { "open": "https://finance.yahoo.com/markets" },
+    "gainers": { "open": "https://finance.yahoo.com/markets/stocks/gainers/" },
+    "losers": { "open": "https://finance.yahoo.com/markets/stocks/losers/" },
+    "trending": { "open": "https://finance.yahoo.com/markets/stocks/trending/" }
+  }
+}
