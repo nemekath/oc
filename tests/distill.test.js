@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { distill, toMarkdown, toHTML, feedToHTML, TEXT_CAP } from '../src/distill.js';
+import { distill, toMarkdown, toHTML, feedToHTML, youtubeToHTML, transcriptToHTML, TEXT_CAP } from '../src/distill.js';
 import { render, estimateTokens } from '../src/render.js';
 
 const html = readFileSync(new URL('./pages/news.html', import.meta.url), 'utf8');
@@ -151,6 +151,40 @@ test('rss with cdata bodies converts too, ordinary html does not', () => {
   const text = p.blocks.map((b) => b.text).join(' ');
   assert.ok(text.includes('A cdata body with markup.'), 'cdata body missing');
   assert.equal(feedToHTML(html), null, 'ordinary html misread as a feed');
+});
+
+test('a youtube watch page renders as title, byline, description, and transcript links', () => {
+  const watch = readFileSync(new URL('./pages/youtube_watch.html', import.meta.url), 'utf8');
+  const p = distill(watch, 'https://www.youtube.com/watch?v=fixture123');
+  assert.equal(p.title, 'Rust for busy people: the borrow checker in five minutes');
+  const heading = p.blocks.find((b) => b.type === 'heading');
+  assert.equal(heading.text, 'Rust for busy people: the borrow checker in five minutes');
+  const text = p.blocks.map((b) => b.text).join(' | ');
+  assert.ok(text.includes('by Fixture Channel'), 'author missing from byline');
+  assert.ok(text.includes('128,453 views'), 'view count missing');
+  assert.ok(text.includes('2026-03-04'), 'publish date missing');
+  assert.ok(text.includes('A quick walkthrough of ownership and borrowing.'), 'description missing');
+  const channel = p.blocks.find((b) => b.type === 'link' && b.text === 'channel');
+  assert.equal(channel.href, 'https://www.youtube.com/channel/UCexampleChannelId000001');
+  const transcripts = p.blocks.filter((b) => b.type === 'link' && b.text.startsWith('transcript:'));
+  assert.equal(transcripts.length, 2);
+  assert.ok(transcripts[0].text.includes('auto-generated'), 'asr track not labeled auto-generated');
+  assert.equal(transcripts[0].href, 'https://www.youtube.com/api/timedtext?v=fixture123&lang=en');
+  assert.ok(!transcripts[1].text.includes('auto-generated'), 'manual track mislabeled auto-generated');
+  assert.equal(youtubeToHTML(html), null, 'ordinary html misread as a watch page');
+});
+
+test('a youtube timedtext response becomes one readable block, duplicates dropped', () => {
+  const xml = '<?xml version="1.0" encoding="utf-8" ?><transcript>'
+    + '<text start="0.0" dur="2.5">We&#39;re no strangers to love</text>'
+    + '<text start="2.5" dur="2.5">We&#39;re no strangers to love</text>'
+    + '<text start="5.0" dur="3.0">You know the rules and so do I</text>'
+    + '</transcript>';
+  const p = distill(xml, 'https://www.youtube.com/api/timedtext?v=fixture123&lang=en');
+  const text = p.blocks.map((b) => b.text).join(' ');
+  assert.equal((text.match(/We're no strangers to love/g) ?? []).length, 1, 'duplicate cue was not dropped');
+  assert.ok(text.includes('You know the rules and so do I'), 'second cue missing');
+  assert.equal(transcriptToHTML(html), null, 'ordinary html misread as a transcript');
 });
 
 test('the content leads the page and the chrome follows it', () => {
