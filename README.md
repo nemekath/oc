@@ -138,10 +138,13 @@ only-cli works on any mostly-static website with no per-site setup: news sites, 
 | Bing | bing.com | `search <query>`, `news <query>` |
 | Stack Overflow | stackoverflow.com (via Atom feeds) | `question <id>`, `tag <name>`, `user <id>`, `recent` |
 | Yahoo Finance | finance.yahoo.com | `quote <symbol>`, `news <symbol>`, `history <symbol>`, `lookup <query>`, `markets`, `gainers`, `losers`, `trending` |
+| YouTube | youtube.com | `video <id>`, `channel <name>` |
 
 X is worth a note because it is usually written off as unreadable without a login. Two of its pages are not: a profile (`x.com/jack`) and a post with its replies (`x.com/jack/status/20`) both arrive as server-rendered HTML, so `oc open` reads them without an account, a token, or a third-party mirror. A profile comes to about 390 tokens including the visible timeline, a post with four replies about 260. The rest of the site does need a login: search, explore, hashtag pages, and the replies, media, and highlights tabs all answer with "Something went wrong", and oc says so rather than pretending.
 
 The engine also renders Atom and RSS feeds as regular pages. That is how Stack Overflow works: the site serves every HTML page a Cloudflare challenge, but publishes full question and answer bodies under `/feeds`, so `oc open stackoverflow.com/feeds/question/11227809` returns the question and its top answers in about 500 tokens. The same trick applies to any site that gates its pages but leaves its feeds open.
+
+YouTube watch pages get a similar trick for a different reason: the page needs client JS to become interactive, but the title, description, view count, and caption tracks already ship inline in the initial HTML response as `ytInitialPlayerResponse`, so `oc open` on a watch page reads that directly instead of waiting on the v0.3 headless fallback. Each caption track becomes a numbered link, and `oc do` on it fetches the transcript as one block of plain text, paged like any other long document with `oc next`/`oc read`. Channel pages and everything else on the site that still needs real JS rendering remain in the "not supported yet" list below.
 
 Not supported yet: pages that only render with JavaScript (a headless fallback is planned for v0.3), sites behind logins (page state is saved, cookies are not, so logins land in v0.2), and sites with hard bot challenges that do not expose feeds.
 

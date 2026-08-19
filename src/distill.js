@@ -80,7 +80,7 @@ const clean = (s) => s.replace(/\s+/g, ' ').trim();
  * @returns {Page}
  */
 export function distill(html, url = '') {
-  const { document } = parseHTML(feedToHTML(html) ?? html);
+  const { document } = parseHTML(youtubeToHTML(html) ?? transcriptToHTML(html) ?? feedToHTML(html) ?? html);
   const title = clean(document.querySelector('title')?.textContent ?? '');
   /** @type {Block[]} */
   const blocks = [];
@@ -303,7 +303,7 @@ const bodyOf = (document) => document.querySelector('body') ?? document.document
  * @param {string} html
  */
 function cleanDocument(html) {
-  const { document } = parseHTML(feedToHTML(html) ?? html);
+  const { document } = parseHTML(youtubeToHTML(html) ?? transcriptToHTML(html) ?? feedToHTML(html) ?? html);
   // Read the title before the sweep below removes the head with it.
   const title = clean(document.querySelector('title')?.textContent ?? '');
   for (const tag of DROP) {
@@ -390,6 +390,103 @@ export function feedToHTML(text) {
   // A full skeleton, because linkedom treats the first element of a bare
   // multi-rooted fragment as the whole document and drops its siblings.
   return `<html><head><title>${esc(feedTitle)}</title></head><body>\n${parts.join('\n')}\n</body></html>`;
+}
+
+const escHTML = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/**
+ * Pull one embedded JSON object out of a page by its variable name, scanning
+ * forward from the first `{` and tracking string/escape state so a brace
+ * inside a quoted value never ends the object early. A regex can't do this
+ * safely because the JSON itself contains braces.
+ * @param {string} text
+ * @param {string} marker
+ * @returns {any}
+ */
+function extractJSON(text, marker) {
+  const at = text.indexOf(marker);
+  if (at === -1) return null;
+  const start = text.indexOf('{', at);
+  if (start === -1) return null;
+  let depth = 0, inString = false, escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === '\\') escaped = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') inString = true;
+    else if (c === '{') depth++;
+    else if (c === '}' && --depth === 0) {
+      try {
+        return JSON.parse(text.slice(start, i + 1));
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * A YouTube watch page needs client JS to become interactive, but the initial
+ * HTML response already carries the title, description, view count, and
+ * caption tracks inline as `ytInitialPlayerResponse`, so none of that has to
+ * wait on the v0.3 headless fallback. Each caption track becomes a link to
+ * its timedtext URL, which `oc do` follows and transcriptToHTML turns into
+ * readable text. Returns null for anything that isn't a watch page.
+ * @param {string} text
+ * @returns {string | null}
+ */
+export function youtubeToHTML(text) {
+  const data = extractJSON(text, 'ytInitialPlayerResponse');
+  const details = data?.videoDetails;
+  if (!details?.title) return null;
+  const micro = data.microformat?.playerMicroformatRenderer;
+  const tracks = data.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
+  const views = details.viewCount ? `${Number(details.viewCount).toLocaleString('en-US')} views` : '';
+  const byline = [details.author && `by ${details.author}`, views, micro?.publishDate].filter(Boolean).join(', ');
+  const channelHref = details.channelId ? `https://www.youtube.com/channel/${details.channelId}` : '';
+  const parts = [`<h1>${escHTML(details.title)}</h1>`];
+  if (byline || channelHref) {
+    parts.push(`<p>${escHTML(byline)}${channelHref ? ` <a href="${escHTML(channelHref)}">channel</a>` : ''}</p>`);
+  }
+  const description = details.shortDescription ?? micro?.description?.simpleText ?? '';
+  for (const para of description.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)) {
+    parts.push(`<p>${escHTML(para)}</p>`);
+  }
+  for (const track of tracks) {
+    const label = track.name?.simpleText || track.languageCode || 'transcript';
+    const kind = track.kind === 'asr' ? ' (auto-generated)' : '';
+    parts.push(`<p><a href="${escHTML(track.baseUrl)}">transcript: ${escHTML(label)}${kind}</a></p>`);
+  }
+  return `<html><head><title>${escHTML(details.title)}</title></head><body>\n${parts.join('\n')}\n</body></html>`;
+}
+
+/**
+ * YouTube's timedtext endpoint answers plain XML, one `<text>` cue per
+ * caption line. Concatenated into a single block rather than one paragraph
+ * per cue, so a whole transcript pages through `oc next`/`oc read` like any
+ * other long document instead of costing one numbered block per few words.
+ * Consecutive duplicate cues (auto captions repeat words across overlapping
+ * segments) are dropped. Returns null for anything that isn't a transcript.
+ * @param {string} text
+ * @returns {string | null}
+ */
+export function transcriptToHTML(text) {
+  if (!/<transcript[\s>]/i.test(text.slice(0, 200))) return null;
+  const { document } = parseHTML(text);
+  const cues = [...document.querySelectorAll('text')];
+  if (!cues.length) return null;
+  const lines = [];
+  for (const cue of cues) {
+    const line = clean(cue.textContent ?? '');
+    if (line && line !== lines[lines.length - 1]) lines.push(line);
+  }
+  if (!lines.length) return null;
+  return `<html><head><title>Transcript</title></head><body>\n<p>${escHTML(lines.join(' '))}</p>\n</body></html>`;
 }
 
 /**
