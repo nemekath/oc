@@ -41,11 +41,17 @@ budget left behind without fetching it again. State lives in ~/.only-cli
 
 // A rendered page has to be remembered or its [3] means nothing to the next
 // command. Saving state must never break a render, so a home directory that
-// cannot be written costs the agent `do`, `read`, and `next`, and nothing else.
+// cannot be written costs the agent `do`, `read`, and `next`, and nothing
+// else, but silently: a sandbox that blocks the write leaves `do` resolving
+// against whatever session last saved successfully, possibly from an
+// unrelated page, with no sign anything is wrong. So the failure still prints,
+// on stderr where it costs nothing until something breaks.
 const remember = (page, name, cursor) => {
   try {
     saveSession(name, sessionFromPage(page, loadSession(name), { cursor }));
-  } catch {}
+  } catch (err) {
+    console.error(`oc: warning: could not save session '${name}' (${err.message}), 'do'/'read'/'next' may act on stale state`);
+  }
 };
 
 // What browsing costs without this tool is the raw page HTML in context.
