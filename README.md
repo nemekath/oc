@@ -6,6 +6,17 @@
 
 Turn most websites into a command line interface, so AI agents like Claude Code, Codex, and Antigravity can browse without burning tokens on raw HTML or screenshots.
 
+The gap is clearest on a task with a few hops in it. Measured 2026-08-19: open r/ClaudeAI's front page, follow its top post to the comments, and report the post title and what the top comment argues.
+
+```
+Codex + oc             ###############                             112,794   right
+Codex default          ########################################    301,009   right
+Claude Code default    ##########################                  196,675   failed, blocked
+Claude Code + oc       #################################           250,628   right
+```
+
+Claude Code's own WebFetch and WebSearch are blocked from reddit.com outright, and by default it has no shell to fall back to, so it does not just cost more, it fails the task and asks for permission it is never going to get. Codex falls back to its own web search and `curl` and gets there, at 2.7x what it costs through oc. Full methodology, the single-page numbers, and an honest case where a default wins are further down in [Against each agent's own defaults](#against-each-agents-own-defaults).
+
 A typical page is tens of thousands of tokens of markup. The signal on it fits in a few hundred. only-cli fetches the page, distills it into a compact text view with numbered actions, and lets an agent drive the site by number:
 
 ```
@@ -179,14 +190,34 @@ The same six tasks run through OpenAI's Codex CLI (`codex exec`) as well, where 
 
 ### Against each agent's own defaults
 
-The tables above compare web tools inside one harness. The question people actually ask is simpler: what happens if you just let the agent browse the way it ships? Measured 2026-08-19, one live session per row, the same task each time: read `finance.yahoo.com/quote/AAPL` and report the price at the last market close. For scale, that page's raw HTML is about 325,000 tokens, and `oc open` hands the agent the answer in about 456.
+The tables above compare web tools inside one harness. The question people actually ask is simpler: what happens if you just let the agent browse the way it ships?
 
-| session | web path | total tokens billed | turns | answer |
-| --- | --- | ---: | ---: | --- |
-| Codex with oc | `oc` in the shell | 59,648 | 4 | right ($310.03) |
-| Codex default | `curl`, raw HTML | 71,947 | 4 | wrong ($302.25) |
-| Claude Code default | WebFetch digest | 123,866 | 3 | right ($310.03) |
-| Claude Code with oc | `oc` in the shell | 198,976 | 7 | right ($310.03) |
+**Multi-hop: a subreddit, its top post, and the top comment.** Measured 2026-08-19, one live session per row: starting from `old.reddit.com/r/ClaudeAI/`, follow the top post to its comments and report the post title and the top comment's argument.
+
+| session | web path | total tokens billed | turns | answer | passed |
+| --- | --- | ---: | ---: | --- | :---: |
+| Codex with oc | `oc` in the shell | 112,794 | 6 | right | ✅ |
+| Codex default | web search, then `curl` | 301,009 | 12 | right | ✅ |
+| Claude Code with oc | `oc` in the shell | 250,628 | 8 | right | ✅ |
+| Claude Code default | WebFetch / WebSearch | 196,675 | 7 | failed, blocked | ❌ |
+
+```
+Codex + oc             ###############                             112,794   right
+Codex default          ########################################    301,009   right
+Claude Code default    ##########################                  196,675   failed, blocked
+Claude Code + oc       #################################           250,628   right
+```
+
+Claude Code's default WebFetch and WebSearch are both blocked from reddit.com, so the agent had nothing left to try: Bash was not on its default permission list, and after a denied `curl` attempt it gave up and asked a human to approve the tool call, which in a non-interactive run never happens. That is a real gap in what ships out of the box, not a slow answer. Codex's default reached for its own web search tool first, got a page that no longer existed at that URL, then fell back to `curl` with a spoofed user agent across several more calls before it found the right thread, which is where its 301,009 tokens and 12 turns went. Both `oc` sessions read the subreddit the same way `oc` reads X and LinkedIn: an impersonated Chrome client, one page at a time, following the numbered link to the comments instead of guessing at a URL.
+
+**Single page: a stock quote.** Measured 2026-08-19, one live session per row: read `finance.yahoo.com/quote/AAPL` and report the price at the last market close. For scale, that page's raw HTML is about 325,000 tokens, and `oc open` hands the agent the answer in about 456.
+
+| session | web path | total tokens billed | turns | answer | passed |
+| --- | --- | ---: | ---: | --- | :---: |
+| Codex with oc | `oc` in the shell | 59,648 | 4 | right ($310.03) | ✅ |
+| Claude Code default | WebFetch digest | 123,866 | 3 | right ($310.03) | ✅ |
+| Claude Code with oc | `oc` in the shell | 198,976 | 7 | right ($310.03) | ✅ |
+| Codex default | web search, never opened the page | 71,947 | 4 | wrong ($302.25) | ❌ |
 
 ```
 Codex + oc            ############                               59,648   right
@@ -195,7 +226,9 @@ Claude Code default   #########################                 123,866   right
 Claude Code + oc      ########################################  198,976   right
 ```
 
-Codex by default reads raw HTML with curl, and on this page it reported a price that is not the closing price anywhere on it. Claude Code's default WebFetch came in cheaper than oc this run, and that deserves an honest note rather than a smaller font: WebFetch does not show the model the page, it runs a second model over the HTML and returns that model's digest (that hidden pass is included in the total above). It was right here, and it is genuinely cheap. The trade is that the agent gets a summary it cannot act on, where oc's view carries numbered links `oc do` can follow and `oc find`, `oc read`, and `oc next` collect the rest of the page without refetching it; the oc session also spent four more turns loading its skill and paging, and turns are what a Claude Code session mostly bills for. Antigravity has no row because it ships its own managed Chrome and reads pages as screenshots, with no headless mode to meter from outside; the computer-use screenshot floors in the page view table are the closest honest number. One run each against a live site, so read the order of magnitude, not the digits.
+Codex by default reached for its own web search tool instead of opening the page, and it reported a stale price that is not the closing price anywhere on the live page. Claude Code's default WebFetch came in cheaper than oc this run, and that deserves an honest note rather than a smaller font: WebFetch does not show the model the page, it runs a second model over the HTML and returns that model's digest (that hidden pass is included in the total above). It was right here, and it is genuinely cheap. The trade is that the agent gets a summary it cannot act on, where oc's view carries numbered links `oc do` can follow and `oc find`, `oc read`, and `oc next` collect the rest of the page without refetching it; the oc session also spent four more turns loading its skill and paging, and turns are what a Claude Code session mostly bills for. On a single static page a good digest tool can win. The moment the task needs a second or third hop, as the Reddit case above shows, that digest has nothing to hand the agent to act on, and the gap flips.
+
+Antigravity has no row because it ships its own managed Chrome and reads pages as screenshots, with no headless mode to meter from outside; the computer-use screenshot floors in the page view table are the closest honest number. One run each against a live site, so read the order of magnitude, not the digits.
 
 ## Status
 
