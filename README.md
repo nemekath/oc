@@ -9,10 +9,10 @@ Turn most websites into a command line interface, so AI agents like Claude Code,
 The gap is clearest on a task with a few hops in it. Measured 2026-08-19: open r/ClaudeAI's front page, follow its top post to the comments, and report the post title and what the top comment argues.
 
 ```
-Codex + oc             ###############                             112,794   right
-Codex default          ########################################    301,009   right
-Claude Code default    ##########################                  196,675   failed, blocked
-Claude Code + oc       #################################           250,628   right
+Codex + oc             ###############                              112,794 tok   6 turns  ✅ right
+Codex default          ########################################     301,009 tok  12 turns  ✅ right
+Claude Code + oc       #################################            250,628 tok   8 turns  ✅ right
+Claude Code default    ##########################                   196,675 tok   7 turns  ❌ failed, blocked
 ```
 
 Claude Code's own WebFetch and WebSearch are blocked from reddit.com outright, and by default it has no shell to fall back to, so it does not just cost more, it fails the task and asks for permission it is never going to get. Codex falls back to its own web search and `curl` and gets there, at 2.7x what it costs through oc. Full methodology, the single-page numbers, and an honest case where a default wins are further down in [Against each agent's own defaults](#against-each-agents-own-defaults).
