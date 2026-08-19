@@ -6,16 +6,23 @@
 
 Turn most websites into a command line interface, so AI agents like Claude Code, Codex, and Antigravity can browse without burning tokens on raw HTML or screenshots.
 
-The gap is clearest on a task with a few hops in it. Measured 2026-08-19: open r/ClaudeAI's front page, follow its top post to the comments, and report the post title and what the top comment argues.
+The gap is clearest on a task with a few hops in it, and it still shows on a single page. Measured 2026-08-19: open r/ClaudeAI's front page, follow its top post to the comments, and report the post title and what the top comment argues; and separately, read `finance.yahoo.com/quote/AAPL` and report the price at the last market close. Bars are on the same scale across both tasks.
 
 ```
+-- Reddit, multi-hop --
 Codex + oc             ###############                              112,794 tok   6 turns  ✅ right
 Codex default          ########################################     301,009 tok  12 turns  ✅ right
 Claude Code + oc       #################################            250,628 tok   8 turns  ✅ right
 Claude Code default    ##########################                   196,675 tok   7 turns  ❌ failed, blocked
+
+-- AAPL, single page --
+Codex + oc             ########                                      59,648 tok   4 turns  ✅ right ($310.03)
+Claude Code default    ################                             123,866 tok   3 turns  ✅ right ($310.03)
+Claude Code + oc       ##########################                   198,976 tok   7 turns  ✅ right ($310.03)
+Codex default          ##########                                    71,947 tok   4 turns  ❌ wrong ($302.25)
 ```
 
-Claude Code's own WebFetch and WebSearch are blocked from reddit.com outright, and by default it has no shell to fall back to, so it does not just cost more, it fails the task and asks for permission it is never going to get. Codex falls back to its own web search and `curl` and gets there, at 2.7x what it costs through oc. Full methodology, the single-page numbers, and an honest case where a default wins are further down in [Against each agent's own defaults](#against-each-agents-own-defaults).
+Claude Code's own WebFetch and WebSearch are blocked from reddit.com outright, and by default it has no shell to fall back to, so it does not just cost more on the Reddit task, it fails outright and asks for permission it is never going to get. Codex falls back to its own web search and `curl` there and gets it right, at 2.7x what it costs through oc. On the single AAPL page it flips: Codex's default never opens the page and reports a stale price, while Claude Code's default WebFetch is genuinely the cheapest correct answer in the table, cheaper than oc. Full methodology for both is further down in [Against each agent's own defaults](#against-each-agents-own-defaults).
 
 A typical page is tens of thousands of tokens of markup. The signal on it fits in a few hundred. only-cli fetches the page, distills it into a compact text view with numbered actions, and lets an agent drive the site by number:
 
