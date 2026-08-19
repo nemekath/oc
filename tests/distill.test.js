@@ -9,6 +9,8 @@ const page = () => distill(html, 'https://example.test/news');
 const feed = readFileSync(new URL('./pages/feed.xml', import.meta.url), 'utf8');
 const forum = readFileSync(new URL('./pages/forum.html', import.meta.url), 'utf8');
 const thread = () => distill(forum, 'https://example.test/t/1');
+const timeline = readFileSync(new URL('./pages/social.html', import.meta.url), 'utf8');
+const social = () => distill(timeline, 'https://social.test/fixture');
 
 test('noise never reaches the output, compact or raw', () => {
   for (const out of [render(page(), { budget: 5000 }).text, toMarkdown(html), toHTML(html)]) {
@@ -58,24 +60,36 @@ test('same page yields the same output', () => {
   assert.equal(render(page()).text, render(page()).text);
 });
 
-test('render respects the token budget', () => {
-  const { text, stats } = render(page(), { budget: 100 });
-  assert.ok(stats.tokens <= 120, `render cost ~${stats.tokens} tokens against a budget of 100`);
+test('a page well past the budget is cut, and what was cut is priced', () => {
+  const { text, stats } = render(page(), { budget: 25 });
+  assert.ok(stats.tokens <= 60, `render cost ~${stats.tokens} tokens against a budget of 25`);
   assert.match(text, /\.\.\. \d+ more blocks \(~\d+ tokens\)/, 'what was cut must be priced');
   assert.ok(text.includes("'oc next'"), 'the cheapest way to the rest must be named');
   assert.ok(text.includes('| next |'), 'next belongs in the actions of a cut page');
 });
 
+test('a page that ends just past the budget is finished instead of cut', () => {
+  // The fixture costs about 134 tokens whole. Cutting it at 40 would save 90
+  // tokens and charge a whole extra turn to get them back, which is a bad trade.
+  const { text, stats } = render(page(), { budget: 40 });
+  assert.equal(stats.next, null, 'a page within reach of the budget must come out whole');
+  assert.ok(!text.includes('more blocks'), 'nothing was cut, so nothing should be priced');
+  assert.ok(text.includes('newest'), 'the last block of the page must be there');
+  // The allowance is not unlimited: a page far past the budget still gets cut.
+  assert.equal(typeof render(thread(), { budget: 100 }).stats.next, 'number');
+});
+
 test('what a render stops at is where the next one starts', () => {
   const p = page();
-  const first = render(p, { budget: 100 });
+  const first = render(p, { budget: 25 });
   assert.equal(typeof first.stats.next, 'number');
   const rest = render(p, { budget: 500, from: first.stats.next });
   assert.ok(rest.text.startsWith('# Fixture News (continued)'));
   assert.equal(rest.stats.next, null, 'the second render finishes the page');
   // Nothing is printed twice and nothing is lost between the two.
-  assert.ok(!rest.text.includes('Postgres 18 released'));
-  assert.ok(first.text.includes('Postgres 18 released'));
+  assert.ok(!rest.text.includes('Show HN'));
+  assert.ok(first.text.includes('Show HN'));
+  assert.ok(rest.text.includes('Postgres 18 released'));
   assert.ok(rest.text.includes('input q'));
 });
 
@@ -161,11 +175,11 @@ test('nothing is dropped when the content is moved up, only reordered', () => {
   assert.ok(text.includes('This sidebar exists on every page'), 'sidebar text went missing');
 });
 
-test('per item links that repeat down a page are dropped, and say so', () => {
+test('per item controls that repeat down a page are dropped, and say so', () => {
   const blocks = thread().blocks;
   assert.ok(!blocks.some((b) => b.type === 'link' && b.text === 'permalink'), 'per comment chrome survived');
   assert.ok(blocks.some((b) => b.type === 'link' && b.text === 'commenter3'), 'a unique link was dropped with them');
-  const note = blocks.find((b) => b.type === 'divider' && b.text.includes('repeated links hidden'));
+  const note = blocks.find((b) => b.type === 'divider' && b.text.includes('repeated controls hidden'));
   assert.ok(note, 'links vanished with nothing said about it');
   assert.ok(note.text.includes("'oc raw' has them"), 'the note does not say how to get them back');
   assert.ok(toMarkdown(forum).includes('permalink'), 'raw lost them too, so the note lies');
@@ -175,6 +189,41 @@ test('a page that fits the budget is left in document order', () => {
   const blocks = page().blocks;
   assert.ok(!blocks.some((b) => b.type === 'divider'), 'a small page was reordered for no reason');
   assert.equal(blocks[0].text, 'Fixture News');
+});
+
+test('an entity does not put spaces inside a word', () => {
+  // linkedom splits a text node at every entity, so `isn&#x27;t` arrives as
+  // three nodes and used to come back out as `isn ' t`.
+  const text = social().blocks.map((b) => b.text).join('\n');
+  assert.ok(text.includes("isn't drawing"), `apostrophe split:\n${text.slice(0, 400)}`);
+  assert.ok(text.includes('interface & its restraint'), 'a real space was swallowed');
+});
+
+test('an icon button is named by its aria-label, a nameless one is dropped', () => {
+  const blocks = social().blocks;
+  assert.ok(blocks.some((b) => b.type === 'button' && b.text === 'Follow'), 'a labelled button went missing');
+  assert.ok(!blocks.some((b) => b.type === 'button' && b.text === 'button'), 'a button with no name was printed anyway');
+  const html = '<html><head><title>T</title></head><body><button aria-label="Reply"></button></body></html>';
+  const one = distill(html, 'https://x.test').blocks.find((b) => b.type === 'button');
+  assert.equal(one.text, 'Reply');
+});
+
+test('per item buttons repeat sooner than links before they count as furniture', () => {
+  const blocks = social().blocks;
+  // Six posts, six sets of Reply/Repost/Like/Bookmark/Share/More.
+  assert.ok(!blocks.some((b) => b.type === 'button' && b.text === 'Reply'), 'per post controls survived');
+  const note = blocks.find((b) => b.type === 'divider' && b.text.includes('repeated controls hidden'));
+  assert.ok(note, 'controls vanished with nothing said about it');
+});
+
+test('separate posts stay separate blocks', () => {
+  // With the per post controls gone there is nothing left between one post and
+  // the next, so without a block boundary six posts merge into one long line
+  // and `read <n>` can no longer address any single one of them.
+  const texts = social().blocks.filter((b) => b.type === 'text').map((b) => b.text);
+  const ncurses = texts.find((t) => t.includes('ncurses'));
+  assert.ok(ncurses, 'the first post went missing');
+  assert.ok(!ncurses.includes('1987 manual'), `two posts merged into one block:\n${ncurses}`);
 });
 
 test('long runs of short links collapse into a range marker', () => {

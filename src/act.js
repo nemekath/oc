@@ -46,9 +46,11 @@ function requireBlocks(session) {
  * Resolve a numbered handle from the last render into something to open.
  * Returns the target URL; the caller fetches and renders it exactly as
  * `oc open` would, so `do` and `open` always agree on what a page looks like.
+ * When the number is text rather than a link it returns `{read}` instead, and
+ * the caller reads it.
  * @param {number} n
  * @param {{session?: string}} [opts]
- * @returns {{url: string, text: string}}
+ * @returns {{url?: string, read?: number, text: string}}
  */
 export function activate(n, { session = DEFAULT_SESSION } = {}) {
   if (!Number.isInteger(n) || n < 1) {
@@ -62,7 +64,10 @@ export function activate(n, { session = DEFAULT_SESSION } = {}) {
     throw new Error(`no [${n}] on ${state.url} (handles ${range}), run 'oc open <url>' again to renumber`);
   }
   if (handle.type === 'text' || handle.type === 'heading') {
-    throw new Error(`[${n}] is ${handle.type}, not a link, use 'oc read ${n}' for the full text there`);
+    // There is nothing to follow, but the agent asked to see what is at [n],
+    // and that is what read prints. Refusing would spend a whole turn to name
+    // the command that should have run, and a turn costs more than the page.
+    return { read: n, text: handle.text };
   }
   if (handle.type === 'input') {
     throw new Error(`[${n}] is an input (${handle.name ?? 'text'}), typing needs 'oc fill', which is not available yet`);

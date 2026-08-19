@@ -1,0 +1,7 @@
+{
+  "domain": "x.com",
+  "commands": {
+    "user": { "open": "https://x.com/{name}", "args": ["name"] },
+    "post": { "open": "https://x.com/i/status/{id}", "args": ["id"] }
+  }
+}

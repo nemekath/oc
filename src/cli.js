@@ -15,7 +15,7 @@ usage: oc <command> [args] [flags]
   next                the next budget worth of the page already open
   read <n>            full text of the region at [n], up to 2000 tokens
   raw [url]           distilled markdown of the whole page
-  do <n>              follow the numbered link [n] from the last page
+  do <n>              follow the numbered link [n], or read [n] if it is text
   fill <n> <text>     type into a numbered input               (v0.2)
   submit [n]          submit a form                            (v0.2)
   back                return to the previous page              (v0.2)
@@ -23,7 +23,9 @@ usage: oc <command> [args] [flags]
 
 flags:
   --budget <tokens>   tighten or loosen the render budget (default 500,
-                      2000 for read)
+                      2000 for read). It is a target, not a ceiling: a page
+                      that would finish within about four times it is printed
+                      whole rather than costing you a second command
   --json              machine-stable JSON output
   --html              raw only: cleaned HTML instead of markdown
   --verbose, -v       metrics on stderr: tokens saved vs the page HTML, HTTP
@@ -90,9 +92,18 @@ async function main() {
       // typed, so both commands share one fetch, render, and save path. `raw`
       // with no URL means the page already open, which is what the compact
       // view's footer offers when it has cut something.
-      const url = command === 'do'
-        ? act.activate(Number(args[0]), { session: sessionName }).url
-        : args[0] ?? (command === 'raw' ? loadSession(sessionName)?.url : undefined);
+      let url;
+      if (command === 'do') {
+        const target = act.activate(Number(args[0]), { session: sessionName });
+        // A number that points at text has no page behind it, so `do` reads it
+        // rather than making the agent pay for a second command to be told.
+        if (target.read != null) {
+          return console.log(act.read(target.read, { session: sessionName, budget: asked || 2000 }));
+        }
+        url = target.url;
+      } else {
+        url = args[0] ?? (command === 'raw' ? loadSession(sessionName)?.url : undefined);
+      }
       if (!url) throw new Error(`usage: oc ${command} <url>`);
       const budget = asked || 500;
       const t0 = performance.now();

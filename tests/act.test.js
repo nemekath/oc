@@ -104,13 +104,15 @@ test('find needs a query and a page', () => {
 });
 
 test('next continues where the budget stopped, then says the page is done', () => {
-  open('paged', 100);
-  const first = next({ session: 'paged', budget: 100 });
+  // Small enough that the fixture stays well past the budget, or the finish
+  // rule would hand the whole page over in one go and there would be no paging.
+  open('paged', 25);
+  const first = next({ session: 'paged', budget: 25 });
   assert.ok(first.startsWith('# Fixture News (continued)'));
   assert.ok(!first.includes('Show HN'), 'next must not reprint what open already charged for');
   let out = first;
   for (let i = 0; i < 10 && loadSession('paged').cursor != null; i++) {
-    out = next({ session: 'paged', budget: 100 });
+    out = next({ session: 'paged', budget: 25 });
   }
   assert.equal(loadSession('paged').cursor, null, 'paging must reach the end of the page');
   assert.ok(out.includes('newest'), 'the last block of the page must come out eventually');
@@ -143,9 +145,15 @@ test('every failure names the command that fixes it', () => {
   assert.throws(() => activate(input.n), /is an input.*oc fill/s);
   const button = page().blocks.find((b) => b.type === 'button');
   assert.throws(() => activate(button.n), /no link to follow/);
-  // The numbers that are not links point at the command that does use them.
-  assert.throws(() => activate(1), /is heading.*oc read 1/s);
-  assert.throws(() => activate(9), /is text.*oc read 9/s);
+});
+
+test('do on a heading or a text block reads it instead of refusing', () => {
+  open();
+  // Nothing to fetch, so the caller is told to read rather than to open. An
+  // error here would cost a turn to say what the next command should be.
+  assert.deepEqual(activate(1), { read: 1, text: 'Fixture News' });
+  assert.equal(activate(9).read, 9);
+  assert.ok(read(activate(9).read).includes('safely does'), 'the read must be the full text');
 });
 
 test('named sessions keep separate page state', () => {

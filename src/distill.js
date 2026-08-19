@@ -32,6 +32,15 @@ const DROP = new Set([
 // them, so the search below refuses to descend into them.
 const FURNITURE = new Set(['nav', 'header', 'footer', 'aside']);
 
+// Elements that end a line on the page and so must end one here. Without this
+// the text of six separate posts merges into a single block, because nothing
+// between them survives distillation to keep them apart.
+const BLOCKY = new Set([
+  'p', 'div', 'article', 'section', 'li', 'ul', 'ol', 'tr', 'td', 'th',
+  'blockquote', 'pre', 'figure', 'figcaption', 'dt', 'dd', 'form', 'br', 'hr',
+  'main', 'nav', 'header', 'footer', 'aside',
+]);
+
 // Selectors a page uses to say where its content is. One match is a claim
 // worth believing; several <article> elements mean a listing, where the list
 // is the content and taking the first would throw the rest away.
@@ -49,11 +58,14 @@ const DESCEND_SHARE = 0.6;
 const KEEP_SHARE = 0.5;
 const MAX_DEPTH = 12;
 
-// A short link label repeated this many times down a page is per-item
-// furniture (permalink, embed, save, reply, hide) rather than content. On a
-// forum thread there is one set per comment, which costs more than the
-// comments do.
+// A short link or button label repeated this many times down a page is
+// per-item furniture (permalink, save, reply, like, repost) rather than
+// content. On a forum thread or a social timeline there is one set per item,
+// which costs more than the items do.
+// A link label can be content, so it gets the benefit of the doubt for longer
+// than a button label, which never is.
 const REPEAT_LIMIT = 5;
+const REPEAT_LIMIT_BUTTON = 3;
 const REPEAT_MAX_LEN = 25;
 
 const clean = (s) => s.replace(/\s+/g, ' ').trim();
@@ -83,8 +95,16 @@ export function distill(html, url = '') {
 
   const walk = (node) => {
     if (node.nodeType === 3) {
-      const text = clean(node.textContent);
-      if (text) blocks.push({ type: 'text', text });
+      const raw = node.textContent ?? '';
+      const text = clean(raw);
+      // A parser is free to split one run of text into several nodes, and
+      // linkedom does it around apostrophes, so `what's` arrives as `what`,
+      // `'`, `s`. Remembering the parent and whether the fragment had space
+      // at its edges is what lets mergeText put it back without inventing a
+      // space that was never in the page.
+      if (text) {
+        blocks.push({ type: 'text', text, host: node.parentNode, pre: /^\s/.test(raw), post: /\s$/.test(raw) });
+      }
       return;
     }
     if (node.nodeType !== 1) return;
@@ -116,8 +136,19 @@ export function distill(html, url = '') {
       return;
     }
     if (tag === 'button') {
-      const text = clean(node.textContent) || 'button';
-      blocks.push({ type: 'button', text });
+      // An icon button carries its name in aria-label or title, and a button
+      // with none of the three cannot be described or pressed, so printing it
+      // spends tokens to say nothing. X puts seven of them under every post.
+      const text = clean(node.textContent)
+        || clean(node.getAttribute('aria-label') ?? '')
+        || clean(node.getAttribute('title') ?? '');
+      if (text) blocks.push({ type: 'button', text });
+      return;
+    }
+    if (BLOCKY.has(tag)) {
+      blocks.push({ type: 'break' });
+      for (const child of node.childNodes) walk(child);
+      blocks.push({ type: 'break' });
       return;
     }
     for (const child of node.childNodes) walk(child);
@@ -153,19 +184,23 @@ export function distill(html, url = '') {
  * @returns {Block[]}
  */
 function dropRepeats(blocks) {
-  /** @type {Map<string, number>} */
+  const controls = (b) => b.type === 'link' || b.type === 'button';
+  /** @type {Map<string, {n: number, limit: number}>} */
   const counts = new Map();
   for (const b of blocks) {
-    if (b.type !== 'link' || b.text.length > REPEAT_MAX_LEN) continue;
+    if (!controls(b) || b.text.length > REPEAT_MAX_LEN) continue;
     const key = b.text.toLowerCase();
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+    const limit = b.type === 'button' ? REPEAT_LIMIT_BUTTON : REPEAT_LIMIT;
+    const seen = counts.get(key);
+    // A label worn by both a link and a button keeps the more patient limit.
+    counts.set(key, { n: (seen?.n ?? 0) + 1, limit: Math.max(seen?.limit ?? 0, limit) });
   }
-  const repeated = new Set([...counts].filter(([, n]) => n >= REPEAT_LIMIT).map(([k]) => k));
+  const repeated = new Set([...counts].filter(([, c]) => c.n >= c.limit).map(([k]) => k));
   if (!repeated.size) return blocks;
-  const kept = blocks.filter((b) => !(b.type === 'link' && repeated.has(b.text.toLowerCase())));
+  const kept = blocks.filter((b) => !(controls(b) && repeated.has(b.text.toLowerCase())));
   const gone = blocks.length - kept.length;
   const names = [...repeated].slice(0, 3).join(', ');
-  const note = { type: 'divider', text: `--- ${gone} repeated links hidden (${names}), 'oc raw' has them ---` };
+  const note = { type: 'divider', text: `--- ${gone} repeated controls hidden (${names}), 'oc raw' has them ---` };
   // The note belongs with the content it was cut from, not after the chrome.
   const boundary = kept.findIndex((b) => b.type === 'divider');
   kept.splice(boundary === -1 ? kept.length : boundary, 0, note);
@@ -219,16 +254,21 @@ function densest(body, total) {
 }
 
 /**
- * Text length minus link text. Link text is what navigation is made of, so
- * subtracting it is what keeps a menu from outscoring an article.
+ * Text length minus the text of controls, which is what a page is steered by
+ * rather than what it says.
  * @param {any} el
  * @returns {number}
  */
 function prose(el) {
   const text = clean(el.textContent ?? '').length;
-  let links = 0;
-  for (const a of el.querySelectorAll?.('a') ?? []) links += clean(a.textContent ?? '').length;
-  return text - links;
+  let controls = 0;
+  // Link text is what navigation is made of. Option text is worse: a country
+  // dropdown is hundreds of characters that no link subtraction touches, and
+  // on a search results page it outscores results that are themselves links.
+  for (const node of el.querySelectorAll?.('a, select, button') ?? []) {
+    controls += clean(node.textContent ?? '').length;
+  }
+  return text - controls;
 }
 
 /**
@@ -362,13 +402,27 @@ function mergeText(blocks) {
   /** @type {Block[]} */
   const out = [];
   for (const b of blocks) {
+    if (b.type === 'break') {
+      // A boundary only has to stop the merge, and it does that by being the
+      // last thing in the list when the next text block arrives.
+      if (out[out.length - 1]?.type === 'text') out.push(b);
+      continue;
+    }
     const prev = out[out.length - 1];
     if (b.type === 'text' && prev?.type === 'text') {
-      prev.text = `${prev.text} ${b.text}`;
+      // Two fragments of one element with no whitespace between them were one
+      // word before the parser split them. Anything else was separated on the
+      // page and stays separated here.
+      const glued = prev.host && prev.host === b.host && !prev.post && !b.pre;
+      prev.text = glued ? `${prev.text}${b.text}` : `${prev.text} ${b.text}`;
+      prev.post = b.post;
     } else {
       out.push(b);
     }
   }
   // Single stray characters (list bullets, separators) cost tokens and say nothing.
-  return out.filter((b) => b.type !== 'text' || b.text.length > 1);
+  return out
+    .filter((b) => b.type !== 'break')
+    .filter((b) => b.type !== 'text' || b.text.length > 1)
+    .map(({ host, pre, post, ...block }) => block);
 }

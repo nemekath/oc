@@ -16,6 +16,16 @@ export const estimateTokens = (s) => Math.ceil(s.length / 4);
 
 const num = (v) => v.toLocaleString('en-US');
 
+// How far past the budget a page may run and still be printed whole. Cutting a
+// page that was nearly done costs the agent a second command, and a command is
+// dear: measured inside Claude Code, one tool call is 23,000 to 33,000 tokens of
+// session overhead no matter what it prints. Against that, break-even sits near
+// fifty times the budget. The number is far lower than break-even because the
+// saving is only collected when the agent would have paged at all, while the
+// overspend is paid on every page that runs a little long, including the ones
+// answered by their first few lines. Four caps that overspend near 1,500 tokens.
+const FINISH = 4;
+
 /**
  * Budget-aware compact view of a distilled page. `from` is a position in the
  * collapsed block list, which is how `oc next` resumes a page where the last
@@ -33,6 +43,15 @@ export function render(page, { budget = 500, from = 0 } = {}) {
   let hasInputs = false;
   let i = Math.max(0, from);
 
+  // What the rest of the page would cost if it were all printed. When that is
+  // within reach the budget stands aside, because stopping here would only
+  // move those tokens into a second command and add a turn's overhead on top.
+  const whole = blocks.slice(i).reduce((sum, b) => {
+    const line = formatBlock(b);
+    return line ? sum + estimateTokens(line) + 1 : sum;
+  }, spent);
+  const limit = whole <= budget * FINISH ? Infinity : budget;
+
   for (; i < blocks.length; i++) {
     const block = blocks[i];
     // Never print the same content twice. Pages often repeat the title as
@@ -45,7 +64,7 @@ export function render(page, { budget = 500, from = 0 } = {}) {
     // what is left has to stay one contiguous run for `oc next` to continue.
     // The exception is a first block bigger than the whole budget, which is
     // printed anyway so the cursor always moves.
-    if (spent + cost > budget && lines.length > head.length) break;
+    if (spent + cost > limit && lines.length > head.length) break;
     spent += cost;
     lines.push(line);
     if (block.type === 'link' || block.type === 'button') hasLinks = true;

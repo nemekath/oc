@@ -21,9 +21,10 @@ npx @only-cli/oc raw [url]      whole page as markdown (add --html for cleaned H
 ## Reading the output
 
 - The first line is the page title, then the page's main content: the article, the comment thread, the results. Navigation, sidebar, and footer come after it, under a `--- rest of page ---` line, still numbered and still followable with `do <n>`.
+- A `--- repeated controls hidden ---` line means per item chrome (save, report, reply, like) was removed because it repeated down the page. `oc raw` still has it.
 - `[n]` marks a link, button, input, heading, or a text block long enough to be cut.
 - `... +820 chars` at the end of a line means that block was cut there. `read <n>` prints it whole.
-- `... 164 more blocks (~7,100 tokens)` means the page ran past the budget. That is the price of the rest, so you can decide before paying.
+- `... 164 more blocks (~7,100 tokens)` means the page ran past the budget. That is the price of the rest, so you can decide before paying. A page that would have finished a little past the budget has no such line: it is printed whole, because a second command costs more than the lines it would have saved.
 - The `actions:` line at the bottom lists valid next commands.
 
 ## Reading more of a page
@@ -61,14 +62,14 @@ Notes that save a round trip:
 - Handles hidden behind a `[6-9] 4 similar links` marker still work, even though their text was collapsed.
 - Search result links resolve to the destination, not the search engine's tracking redirect.
 - `do` on an input or a button says so; typing and submitting are not available yet.
-- `do` on a heading or a text block says to use `read <n>` instead.
+- `do` on a heading or a text block has nothing to follow, so it prints the read instead of refusing.
 - `--session <name>` keeps separate page state, for working on two sites at once.
 
 Reach for `raw <url>` when you need the whole page text, not to hunt for a URL.
 
 ## Flags
 
-- `--budget <tokens>` raise or lower the render budget (default 500, 2000 for `read`)
+- `--budget <tokens>` raise or lower the render budget (default 500, 2000 for `read`). It is a target rather than a hard cap: a page that would finish within about four times it comes out whole instead of being cut.
 - `--json` machine-stable JSON of the distilled page
 - `--html` with raw: cleaned HTML instead of markdown, if markup suits your task better
 - `--verbose` (`-v`, alias `--stats`) metrics on stderr: tokens saved vs the page HTML, HTTP status and which client identity got the page, fetch and processing time, bytes transferred, memory use. Only pass this when you are running in verbose mode or diagnosing a problem; the metrics line costs tokens like everything else. Users can export `OC_VERBOSE=1` to turn it on globally.
