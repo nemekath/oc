@@ -67,4 +67,4 @@ jobs:
             npm version --no-git-tag-version "${V%%-*}-dev.${{ github.run_number }}"
           fi
           echo "CHANNEL=$CHANNEL" >> "$GITHUB_ENV"
-      - run: npm publish --access public --tag "$CHANNEL"
+      - run: npm publish --access public --provenance --tag "$CHANNEL"

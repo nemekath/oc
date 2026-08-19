@@ -1,0 +1,17 @@
+# Blocks a PR that introduces a known-vulnerable or newly-yanked dependency,
+# before merge (Dependabot alerts only fire after a dependency is already in).
+name: "Dependency Review"
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/dependency-review-action@v4

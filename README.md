@@ -2,7 +2,7 @@
 
 ![A tangle of raw HTML being funneled into a small, tidy terminal window](docs/hero.jpg)
 
-[![npm](https://img.shields.io/npm/v/%40only-cli%2Foc)](https://www.npmjs.com/package/@only-cli/oc) [![node](https://img.shields.io/node/v/%40only-cli%2Foc)](https://nodejs.org) [![license: MIT](https://img.shields.io/badge/license-MIT-green)](#license)
+[![npm](https://img.shields.io/npm/v/%40only-cli%2Foc)](https://www.npmjs.com/package/@only-cli/oc) [![node](https://img.shields.io/node/v/%40only-cli%2Foc)](https://nodejs.org) [![license: MIT](https://img.shields.io/badge/license-MIT-green)](#license) [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/only-cli/oc/badge)](https://scorecard.dev/viewer/?uri=github.com/only-cli/oc)
 
 Turns websites into a command line interface for AI agents. `oc open <url>` fetches a page and hands back a compact, numbered view instead of raw HTML or a screenshot, so agents like Claude Code, Codex, and Antigravity can browse without burning tokens. It also gets past blocks that stop naive fetchers on some sites, by talking to the page the way a real browser would.
 
