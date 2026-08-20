@@ -13,7 +13,7 @@ Key facts:
 - Works on any mostly-static website; tuned shortcuts ship for Hacker News, Reddit, GitHub, X, LinkedIn (public guest views), DuckDuckGo, Bing, Stack Overflow (via its Atom feeds), and Yahoo Finance (quotes, history, markets)
 - X profiles and individual posts read without a login (about 390 and 260 tokens); X search, explore, and hashtag pages do not, and oc reports the block instead of guessing
 - Requests impersonate Chrome, so pages that block plain scripts often still work
-- Claude Code skill included: `npx skills add only-cli/oc`
+- Agent skill included: `npx skills add https://github.com/only-cli/oc --skill web-browsing-cli` ([skills.sh](https://www.skills.sh/only-cli/oc/web-browsing-cli))
 - No JavaScript rendering yet and no login sessions yet (both on the roadmap)
 
 ## Docs

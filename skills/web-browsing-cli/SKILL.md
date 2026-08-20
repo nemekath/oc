@@ -1,6 +1,6 @@
 ---
-name: only-cli
-description: Browse websites from the terminal in a few hundred tokens. Use when you need content from a web page, want to check a link, or would otherwise fetch raw HTML or reach for a browser.
+name: web-browsing-cli
+description: Token-efficient web browsing and web content extraction for AI agents. Use when reading a URL, browsing websites, checking links, extracting static page content, or replacing raw HTML and browser screenshots.
 ---
 
 # only-cli
@@ -8,12 +8,12 @@ description: Browse websites from the terminal in a few hundred tokens. Use when
 Renders a web page as a compact, numbered terminal view instead of raw HTML. A typical page is under 500 tokens.
 
 ```
-npx @only-cli/oc open <url>     compact view, numbered elements
-npx @only-cli/oc do <n>         follow link [n], or read it if [n] is text
-npx @only-cli/oc find <query>   lines where a string appears, with numbers
-npx @only-cli/oc next           next ~500 tokens of the page already open
-npx @only-cli/oc read <n>       full text of region [n]
-npx @only-cli/oc raw [url]      whole page as markdown (--html for cleaned HTML)
+npx --yes @only-cli/oc@0.2.0 open <url>     compact view, numbered elements
+npx --yes @only-cli/oc@0.2.0 do <n>         follow link [n], or read it if [n] is text
+npx --yes @only-cli/oc@0.2.0 find <query>   lines where a string appears, with numbers
+npx --yes @only-cli/oc@0.2.0 next           next ~500 tokens of the page already open
+npx --yes @only-cli/oc@0.2.0 read <n>       full text of region [n]
+npx --yes @only-cli/oc@0.2.0 raw [url]      whole page as markdown (--html for cleaned HTML)
 ```
 
 None of these except `open`/`do`/`raw <url>` fetch anything — they replay the page `open` already saved.

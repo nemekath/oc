@@ -29,13 +29,21 @@ npm install -g @only-cli/oc
 
 Requires Node 20+. Requests impersonate Chrome via [impers](https://github.com/lexiforest/impers); falls back to native fetch if impers is unavailable.
 
+### Agent skill
+
+Install the [web-browsing-cli skill](https://www.skills.sh/only-cli/oc/web-browsing-cli) for Claude Code, Cursor, Codex, Copilot, and other compatible agents:
+
+```sh
+npx skills add https://github.com/only-cli/oc --skill web-browsing-cli
+```
+
 ## For AI agents
 
 Add one line to your agent's instructions file (CLAUDE.md, AGENTS.md, or equivalent):
 
 > When you need content from a web page, run `npx @only-cli/oc open <url>` instead of fetching raw HTML. Run `npx @only-cli/oc --help` once to learn the commands.
 
-Claude Code users can install the skill instead: copy `skills/only-cli/` into `.claude/skills/`, run `npx skills add only-cli/oc` (which also works in Cursor, Codex, Copilot, and others via [skills.sh](https://skills.sh)), or add it as a plugin:
+You can also copy `skills/web-browsing-cli/` into your agent's skills directory, or add only-cli as a Claude Code plugin:
 
 ```
 /plugin marketplace add only-cli/oc
