@@ -197,9 +197,12 @@ async function viaFetch(target) {
   if (!res.ok) {
     throw new Error(`fetch failed: ${res.status} ${res.statusText} for ${current}`);
   }
+  // JSON is a page here too: an API answer distills into one article per item.
+  // The impers path never checked the type at all, so this is also what keeps
+  // the two transports rendering the same URL the same way.
   const type = res.headers.get('content-type') ?? '';
-  if (type && !type.includes('html') && !type.includes('xml')) {
-    throw new Error(`not an HTML page (${type.split(';')[0]}), nothing to distill`);
+  if (type && !/html|xml|json/.test(type)) {
+    throw new Error(`not a page oc can read (${type.split(';')[0]}), it renders HTML, XML feeds, and JSON`);
   }
   return { url: res.url || current, html: await res.text(), status: res.status, via: 'fetch' };
 }

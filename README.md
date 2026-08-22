@@ -73,7 +73,7 @@ Flags: `--budget <tokens>` (default 500), `--json`, `--html` (raw as cleaned HTM
 
 ## Supported websites
 
-Works on any mostly-static site with no per-site setup: news sites, blogs, documentation, forums, search engines. On top of that, `clis/` ships tuned shortcuts for:
+Works on any mostly-static site with no per-site setup: news sites, blogs, documentation, forums, search engines. A JSON API is a page here too: `oc open` on an endpoint that answers with JSON renders one numbered item per record, keeps the fields that actually differ between items, and says once what every item shares. On top of that, `clis/` ships tuned shortcuts for:
 
 | website | domain | shortcuts |
 | --- | --- | --- |
@@ -84,11 +84,11 @@ Works on any mostly-static site with no per-site setup: news sites, blogs, docum
 | LinkedIn | linkedin.com | `profile <name>`, `company <name>`, `jobs <query>` (public guest views) |
 | DuckDuckGo | duckduckgo.com | `search <query>`, `lite <query>` |
 | Bing | bing.com | `search <query>`, `news <query>` |
-| Stack Overflow | stackoverflow.com (via Atom feeds) | `question <id>`, `tag <name>`, `user <id>`, `recent` |
+| Stack Overflow | stackoverflow.com (via Atom feeds and the Stack Exchange API) | `search <query>`, `question <id>`, `tag <name>`, `user <id>`, `recent` |
 | Yahoo Finance | finance.yahoo.com | `quote <symbol>`, `news <symbol>`, `history <symbol>`, `lookup <query>`, `markets`, `gainers`, `losers`, `trending` |
 | YouTube | youtube.com | `video <id>`, `channel <name>` |
 
-A few of these (X, Stack Overflow, YouTube) read pages that look login-gated or JS-only from the outside, by finding the server-rendered HTML, feed, or inline data the page already ships without a login. Not supported yet: pages that only render with JavaScript, sites behind logins, and sites with hard bot challenges that expose no feed.
+A few of these (X, Stack Overflow, YouTube) read pages that look login-gated or JS-only from the outside, by finding the server-rendered HTML, feed, inline data, or public API the page already ships without a login. Stack Overflow search goes through the Stack Exchange API, and each result prints its `question_id`: read one with the `question <id>` feed rather than following its link, since the question page itself answers a bot challenge instead of the question. Not supported yet: pages that only render with JavaScript, sites behind logins, and sites with hard bot challenges that expose no feed.
 
 Want a website on that list? Open a pull request, or an issue naming the site — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
