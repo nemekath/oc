@@ -63,8 +63,8 @@ oc find <query>        where a string appears on the page already open
 oc read <n>            full text of the region at [n], up to 2000 tokens
 oc next                the next budget worth of the page already open
 oc raw [url]           distilled markdown of the whole page
-oc fill <n> <text>     type into a numbered input               (v0.2)
-oc submit [n]          submit a form                            (v0.2)
+oc fill <n> <text>     type into a numbered input               (planned)
+oc submit [n]          submit a form                            (planned)
 ```
 
 Flags: `--budget <tokens>` (default 500), `--json`, `--html` (raw as cleaned HTML), `--session <name>`, `--verbose`/`-v` (metrics on stderr, or export `OC_VERBOSE=1`).
@@ -107,7 +107,7 @@ Full methodology, per-task numbers, and other agents/models live in [only-cli/be
 
 ## Status
 
-Early. v0.1 covers static pages, budget-aware rendering, and offline tests. Sessions, `oc do <n>`, `oc find <query>`, `oc read <n>`, and `oc next` are in, the rest of the actions (`fill`, `submit`, `back`) land in v0.2, and a lazy headless fallback for script-heavy pages in v0.3.
+Early. Reading works and is covered by offline tests: static pages, XML feeds, JSON APIs, budget-aware rendering, sessions, and the numbered actions `do`, `find`, `read`, `next`, and `raw`. Writing does not: `fill`, `submit`, and `back` report that they are not implemented rather than pretending, and a lazy headless fallback for script-heavy pages comes after them.
 
 Known limits, honestly: no JavaScript rendering yet, no sites behind logins yet, and pages behind hard bot challenges may still refuse the tool.
 

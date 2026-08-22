@@ -16,10 +16,10 @@ usage: oc <command> [args] [flags]
   read <n>            full text of the region at [n], up to 2000 tokens
   raw [url]           distilled markdown of the whole page
   do <n>              follow the numbered link [n], or read [n] if it is text
-  fill <n> <text>     type into a numbered input               (v0.2)
-  submit [n]          submit a form                            (v0.2)
-  back                return to the previous page              (v0.2)
-  session ls|rm       manage saved sessions                    (v0.2)
+  fill <n> <text>     type into a numbered input               (planned)
+  submit [n]          submit a form                            (planned)
+  back                return to the previous page              (planned)
+  session ls|rm       manage saved sessions                    (planned)
 
 flags:
   --budget <tokens>   tighten or loosen the render budget (default 500,
