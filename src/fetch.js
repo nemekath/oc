@@ -24,6 +24,25 @@ const loadImpers = () => {
 const BLOCKED_MESSAGE = 'blocked: private or internal URL';
 const MAX_REDIRECTS = 20;
 
+// What oc can turn into text: any text/* type, plus the application/* types
+// that are really text (json, xml, and the +json / +xml families a feed or an
+// API answers with). A PNG matches none of these, and rendering one produces
+// pages of mojibake an agent then pays for, so it is refused by name instead.
+const READABLE_TYPE = /^\s*(?:text\/|application\/(?:json|xml|javascript|x-ndjson|[\w.+-]*\+(?:json|xml)))/i;
+
+/**
+ * Refuse a response oc cannot read as text. Both transports call this: the
+ * gate has to live on whichever client got the page, or the same URL renders
+ * as an error through fetch and as binary noise through impers.
+ * @param {string | null | undefined} type - the content-type header
+ */
+export function assertReadableType(type) {
+  // No header at all is not a refusal: plenty of small servers omit it, and
+  // the distiller handles whatever comes back.
+  if (!type || READABLE_TYPE.test(type)) return;
+  throw new Error(`not a page oc can read (${type.split(';')[0].trim()}), it renders HTML, XML feeds, JSON, and plain text`);
+}
+
 // IPv4 ranges with no business receiving a server-initiated fetch: loopback,
 // link-local, the three RFC 1918 private blocks, carrier-grade NAT, the
 // unspecified/broadcast addresses, and the documentation/benchmark ranges.
@@ -169,6 +188,7 @@ async function viaImpers(impers, target) {
     status = res.status ?? res.statusCode ?? 0;
   }
   if (status >= 400) throw new Error(`fetch failed: ${status} for ${target}`);
+  assertReadableType(res.headers.get('content-type'));
   const html = typeof res.text === 'function' ? await res.text() : String(res.text ?? res.body ?? '');
   return { url: res.url ?? target, html, status, via };
 }
@@ -197,12 +217,6 @@ async function viaFetch(target) {
   if (!res.ok) {
     throw new Error(`fetch failed: ${res.status} ${res.statusText} for ${current}`);
   }
-  // JSON is a page here too: an API answer distills into one article per item.
-  // The impers path never checked the type at all, so this is also what keeps
-  // the two transports rendering the same URL the same way.
-  const type = res.headers.get('content-type') ?? '';
-  if (type && !/html|xml|json/.test(type)) {
-    throw new Error(`not a page oc can read (${type.split(';')[0]}), it renders HTML, XML feeds, and JSON`);
-  }
+  assertReadableType(res.headers.get('content-type'));
   return { url: res.url || current, html: await res.text(), status: res.status, via: 'fetch' };
 }

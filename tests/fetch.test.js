@@ -72,3 +72,35 @@ test('fetchPage re-validates every redirect hop, not just the original URL', asy
   const redirector = `https://httpbin.org/redirect-to?url=${encodeURIComponent('http://127.0.0.1/admin')}`;
   await assert.rejects(() => fetchPage(redirector), new RegExp(BLOCKED_MESSAGE));
 });
+
+test('the readable-type gate accepts text and refuses binary, on either transport', async () => {
+  const { assertReadableType } = await import('../src/fetch.js');
+
+  // Everything oc has something to say about.
+  for (const type of [
+    'text/html; charset=utf-8',
+    'text/plain',
+    'text/markdown',
+    'application/json',
+    'application/json; charset=utf-8',
+    'application/xml',
+    'application/atom+xml',
+    'application/rss+xml',
+    'application/ld+json',
+    ' text/html ',
+  ]) {
+    assert.doesNotThrow(() => assertReadableType(type), `expected ${type} to be readable`);
+  }
+
+  // A missing header is not a refusal: small servers omit it and the page
+  // behind it is usually fine.
+  assert.doesNotThrow(() => assertReadableType(undefined));
+  assert.doesNotThrow(() => assertReadableType(''));
+
+  // Binary renders as pages of mojibake the agent pays for, so it is named
+  // and refused rather than distilled.
+  for (const type of ['image/png', 'image/jpeg', 'application/pdf', 'application/octet-stream', 'video/mp4', 'application/zip']) {
+    assert.throws(() => assertReadableType(type), /not a page oc can read/, `expected ${type} to be refused`);
+  }
+  assert.throws(() => assertReadableType('image/png'), /image\/png/);
+});
