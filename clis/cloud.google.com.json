@@ -1,0 +1,9 @@
+{
+  "domain": "cloud.google.com",
+  "commands": {
+    "docs": { "open": "https://docs.cloud.google.com/{product}/docs", "args": ["product"] },
+    "page": { "open": "https://docs.cloud.google.com/{product}/docs/{page}", "args": ["product", "page"] },
+    "gcloud": { "open": "https://docs.cloud.google.com/sdk/gcloud/reference/{command}", "args": ["command"] },
+    "search": { "open": "https://html.duckduckgo.com/html/?q=site%3Acloud.google.com+{query}", "args": ["query"] }
+  }
+}
