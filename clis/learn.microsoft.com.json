@@ -1,0 +1,8 @@
+{
+  "domain": "learn.microsoft.com",
+  "commands": {
+    "azure": { "open": "https://learn.microsoft.com/en-us/azure/{page}", "args": ["page"] },
+    "doc": { "open": "https://learn.microsoft.com/en-us/{path}", "args": ["path"] },
+    "cli": { "open": "https://learn.microsoft.com/en-us/cli/azure/{command}", "args": ["command"] }
+  }
+}

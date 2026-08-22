@@ -87,6 +87,9 @@ Works on any mostly-static site with no per-site setup: news sites, blogs, docum
 | Stack Overflow | stackoverflow.com (via Atom feeds) | `question <id>`, `tag <name>`, `user <id>`, `recent` |
 | Yahoo Finance | finance.yahoo.com | `quote <symbol>`, `news <symbol>`, `history <symbol>`, `lookup <query>`, `markets`, `gainers`, `losers`, `trending` |
 | YouTube | youtube.com | `video <id>`, `channel <name>` |
+| AWS docs | docs.aws.amazon.com | `guide <service> <page>`, `page <service> <guide> <page>`, `cli <command>` |
+| Google Cloud docs | cloud.google.com (via docs.cloud.google.com) | `docs <product>`, `page <product> <page>`, `gcloud <command>` |
+| Microsoft Learn | learn.microsoft.com | `azure <page>`, `doc <path>`, `cli <command>` |
 
 A few of these (X, Stack Overflow, YouTube) read pages that look login-gated or JS-only from the outside, by finding the server-rendered HTML, feed, or inline data the page already ships without a login. Not supported yet: pages that only render with JavaScript, sites behind logins, and sites with hard bot challenges that expose no feed.
 
