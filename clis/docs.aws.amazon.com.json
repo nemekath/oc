@@ -3,6 +3,7 @@
   "commands": {
     "guide": { "open": "https://docs.aws.amazon.com/{service}/latest/userguide/{page}.html", "args": ["service", "page"] },
     "page": { "open": "https://docs.aws.amazon.com/{service}/latest/{guide}/{page}.html", "args": ["service", "guide", "page"] },
-    "cli": { "open": "https://docs.aws.amazon.com/cli/latest/reference/{command}/", "args": ["command"] }
+    "cli": { "open": "https://docs.aws.amazon.com/cli/latest/reference/{command}/", "args": ["command"] },
+    "search": { "open": "https://html.duckduckgo.com/html/?q=site%3Adocs.aws.amazon.com+{query}", "args": ["query"] }
   }
 }

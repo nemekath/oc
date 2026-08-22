@@ -87,11 +87,11 @@ Works on any mostly-static site with no per-site setup: news sites, blogs, docum
 | Stack Overflow | stackoverflow.com (via Atom feeds) | `question <id>`, `tag <name>`, `user <id>`, `recent` |
 | Yahoo Finance | finance.yahoo.com | `quote <symbol>`, `news <symbol>`, `history <symbol>`, `lookup <query>`, `markets`, `gainers`, `losers`, `trending` |
 | YouTube | youtube.com | `video <id>`, `channel <name>` |
-| AWS docs | docs.aws.amazon.com | `guide <service> <page>`, `page <service> <guide> <page>`, `cli <command>` |
-| Google Cloud docs | cloud.google.com (via docs.cloud.google.com) | `docs <product>`, `page <product> <page>`, `gcloud <command>` |
-| Microsoft Learn | learn.microsoft.com | `azure <page>`, `doc <path>`, `cli <command>` |
+| AWS docs | docs.aws.amazon.com (search via DuckDuckGo) | `guide <service> <page>`, `page <service> <guide> <page>`, `cli <command>`, `search <query>` |
+| Google Cloud docs | cloud.google.com (via docs.cloud.google.com, search via DuckDuckGo) | `docs <product>`, `page <product> <page>`, `gcloud <command>`, `search <query>` |
+| Microsoft Learn | learn.microsoft.com (search via its RSS API) | `azure <page>`, `doc <path>`, `cli <command>`, `search <query>` |
 
-A few of these (X, Stack Overflow, YouTube) read pages that look login-gated or JS-only from the outside, by finding the server-rendered HTML, feed, or inline data the page already ships without a login. Not supported yet: pages that only render with JavaScript, sites behind logins, and sites with hard bot challenges that expose no feed.
+A few of these (X, Stack Overflow, YouTube, Microsoft Learn search) read pages that look login-gated or JS-only from the outside, by finding the server-rendered HTML, feed, or inline data the page already ships without a login. AWS and Google Cloud render docs search purely client-side with no feed, so their `search` goes through DuckDuckGo with a baked-in `site:` filter instead. Not supported yet: pages that only render with JavaScript, sites behind logins, and sites with hard bot challenges that expose no feed.
 
 Want a website on that list? Open a pull request, or an issue naming the site — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
