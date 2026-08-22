@@ -10,7 +10,8 @@ Key facts:
 - The budget is a target rather than a hard cap: a page that would finish within about four times it is printed whole, because a second command costs the agent far more than the lines the cut would have saved
 - The render leads with the page's main content and puts navigation, sidebar, and footer after it, so the budget is spent on what was asked for rather than on menus
 - Benchmarked at roughly 45x fewer tokens than reading raw HTML, with per-task numbers at https://github.com/only-cli/benchmarks
-- Works on any mostly-static website; tuned shortcuts ship for Hacker News, Reddit, GitHub, X, LinkedIn (public guest views), DuckDuckGo, Bing, Stack Overflow (via its Atom feeds), and Yahoo Finance (quotes, history, markets)
+- Works on any mostly-static website; tuned shortcuts ship for Hacker News, Reddit, GitHub, X, LinkedIn (public guest views), DuckDuckGo, Bing, Stack Overflow (via its Atom feeds and the Stack Exchange API), and Yahoo Finance (quotes, history, markets)
+- JSON APIs render like pages: an endpoint that answers with JSON becomes one numbered item per record, with the fields that differ between items kept and the ones every item shares stated once, so a search endpoint reads like a results page for a few hundred tokens
 - X profiles and individual posts read without a login (about 390 and 260 tokens); X search, explore, and hashtag pages do not, and oc reports the block instead of guessing
 - Requests impersonate Chrome, so pages that block plain scripts often still work
 - Agent skill included: `npx skills add https://github.com/only-cli/oc --skill web-browsing-cli` ([skills.sh](https://www.skills.sh/only-cli/oc/web-browsing-cli))

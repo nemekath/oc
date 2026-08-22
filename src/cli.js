@@ -130,7 +130,7 @@ async function main() {
       }
       const htmlTokens = estimateTokens(html);
       if (command === 'raw') {
-        const out = values.html ? toHTML(html) : toMarkdown(html);
+        const out = values.html ? toHTML(html, finalUrl) : toMarkdown(html, finalUrl);
         console.log(out);
         if (verbose) console.error(`${savings(estimateTokens(out), htmlTokens)}; ${resources()}`);
         return;

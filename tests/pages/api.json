@@ -1,0 +1,71 @@
+{
+  "items": [
+    {
+      "tags": ["physics", "optics"],
+      "owner": {
+        "account_id": 1,
+        "reputation": 5120,
+        "user_id": 11,
+        "display_name": "Ray Leigh",
+        "profile_image": "https://example.test/img/1.png?s=256",
+        "link": "https://example.test/users/11/ray-leigh"
+      },
+      "is_answered": true,
+      "closed_date": null,
+      "view_count": 91234,
+      "answer_count": 4,
+      "score": 512,
+      "creation_date": 1340805096,
+      "question_id": 42,
+      "content_license": "CC BY-SA 4.0",
+      "link": "https://example.test/questions/42/why-is-the-sky-blue",
+      "title": "Why is the sky blue, and why does &quot;blue&quot; scatter most?",
+      "body": "<p>Looking up on a clear day the sky is blue, yet sunlight is white.</p>\n<pre><code>wavelength &lt; 450nm\n</code></pre>\n<p>What scatters the shorter wavelengths? See <a href=\"https://example.test/scattering\">the derivation</a>.</p>"
+    },
+    {
+      "tags": ["optics"],
+      "owner": {
+        "account_id": 2,
+        "reputation": 87,
+        "user_id": 12,
+        "display_name": "Tyndall",
+        "profile_image": "https://example.test/img/2.png?s=256",
+        "link": "https://example.test/users/12/tyndall"
+      },
+      "is_answered": true,
+      "closed_date": null,
+      "view_count": 300,
+      "answer_count": 1,
+      "score": 7,
+      "creation_date": 1340808000,
+      "question_id": 43,
+      "content_license": "CC BY-SA 4.0",
+      "link": "https://example.test/questions/43/what-is-tyndall-scattering",
+      "title": "What is Tyndall scattering?"
+    },
+    {
+      "tags": ["physics", "atmosphere"],
+      "owner": {
+        "account_id": 3,
+        "reputation": 1904,
+        "user_id": 13,
+        "display_name": "Mie",
+        "profile_image": "https://example.test/img/3.png?s=256",
+        "link": "https://example.test/users/13/mie"
+      },
+      "is_answered": true,
+      "closed_date": null,
+      "view_count": 1580,
+      "answer_count": 2,
+      "score": 33,
+      "creation_date": 1340900000,
+      "question_id": 44,
+      "content_license": "CC BY-SA 4.0",
+      "link": "https://example.test/questions/44/why-are-sunsets-red",
+      "title": "Why are sunsets red?"
+    }
+  ],
+  "has_more": true,
+  "quota_max": 300,
+  "quota_remaining": 297
+}

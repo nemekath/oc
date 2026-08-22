@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { distill, toMarkdown, toHTML, feedToHTML, youtubeToHTML, transcriptToHTML, TEXT_CAP } from '../src/distill.js';
+import { distill, toMarkdown, toHTML, feedToHTML, jsonToHTML, youtubeToHTML, transcriptToHTML, TEXT_CAP } from '../src/distill.js';
 import { render, estimateTokens } from '../src/render.js';
 
 const html = readFileSync(new URL('./pages/news.html', import.meta.url), 'utf8');
@@ -11,6 +11,12 @@ const forum = readFileSync(new URL('./pages/forum.html', import.meta.url), 'utf8
 const thread = () => distill(forum, 'https://example.test/t/1');
 const timeline = readFileSync(new URL('./pages/social.html', import.meta.url), 'utf8');
 const social = () => distill(timeline, 'https://social.test/fixture');
+const api = readFileSync(new URL('./pages/api.json', import.meta.url), 'utf8');
+const API_URL = 'https://api.example.test/2.3/search/advanced?site=fixture&q=sky+blue';
+const results = () => distill(api, API_URL);
+// Turndown escapes the underscores in field names, which is correct markdown
+// and only noise to assert against.
+const rawApi = () => toMarkdown(api, API_URL).replace(/\\_/g, '_');
 
 test('noise never reaches the output, compact or raw', () => {
   for (const out of [render(page(), { budget: 5000 }).text, toMarkdown(html), toHTML(html)]) {
@@ -258,6 +264,71 @@ test('separate posts stay separate blocks', () => {
   const ncurses = texts.find((t) => t.includes('ncurses'));
   assert.ok(ncurses, 'the first post went missing');
   assert.ok(!ncurses.includes('1987 manual'), `two posts merged into one block:\n${ncurses}`);
+});
+
+test('a json api response renders as items, each title a link to its page', () => {
+  const p = results();
+  assert.equal(p.title, 'api.example.test/2.3/search/advanced: "sky blue" (3 items)');
+  const links = p.blocks.filter((b) => b.type === 'link');
+  assert.equal(links[0].text, 'Why is the sky blue, and why does "blue" scatter most?', 'title left html-escaped');
+  assert.equal(links[0].href, 'https://example.test/questions/42/why-is-the-sky-blue');
+  assert.ok(links[0].n, 'a result with no handle cannot be followed');
+  const text = p.blocks.map((b) => b.text).join('\n');
+  assert.ok(/score: 512/.test(text), 'the fields that vary went missing');
+});
+
+test('fields identical on every item are stated once, not thirty times', () => {
+  const { text } = render(results(), { budget: 2000 });
+  assert.equal(text.match(/content_license/g).length, 1, 'a constant field repeated per item');
+  assert.ok(text.includes('same on every item: is_answered=true, content_license=CC BY-SA 4.0'));
+  assert.ok(text.includes('empty on every item: closed_date'), 'a null-everywhere field vanished silently');
+});
+
+test('the compact view drops low-value fields and says which, raw keeps them all', () => {
+  const { text } = render(results(), { budget: 2000 });
+  assert.ok(!text.includes('profile_image'), 'an image url outscored the fields worth reading');
+  assert.ok(/\d+ fields per item not shown \(/.test(text), 'fields went missing with nothing said about it');
+  const md = rawApi();
+  assert.ok(md.includes('profile_image'), 'raw mode is the escape hatch and has to hold everything');
+  assert.ok(md.includes('owner.display_name: Ray Leigh'), 'nested objects flatten one level');
+});
+
+test('request metadata sits in the footer instead of on every row', () => {
+  const { text } = render(results(), { budget: 2000 });
+  assert.ok(text.includes('response: has_more=true, quota_max=300, quota_remaining=297'));
+  assert.equal(text.match(/quota_remaining/g).length, 1);
+});
+
+test('epoch timestamps under a date key render as dates', () => {
+  const md = rawApi();
+  assert.ok(md.includes('creation_date: 2012-06-27 13:51:36'), `epoch left raw:\n${md.slice(0, 400)}`);
+  // A number that is not a date must stay the number it is.
+  assert.ok(md.includes('view_count: 91234'), 'a plain count was mangled into a date');
+});
+
+test('an html field in json goes through the distiller, not into a cell', () => {
+  const md = rawApi();
+  assert.ok(md.includes('```\nwavelength < 450nm'), 'code block in a json body field was flattened');
+  assert.ok(md.includes('[the derivation](https://example.test/scattering)'), 'link inside a json body field lost');
+  const p = results();
+  assert.ok(p.blocks.some((b) => b.type === 'link' && b.text === 'the derivation'), 'body link is not followable');
+});
+
+test('json shapes other than a wrapped array still render', () => {
+  const bare = distill('[{"name":"one","url":"https://example.test/1"},{"name":"two","url":"https://example.test/2"}]', 'https://x.test/a.json');
+  assert.equal(bare.blocks.filter((b) => b.type === 'link').length, 2, 'a root array lost its items');
+  const single = distill('{"title":"Just one","score":3}', 'https://x.test/one.json');
+  assert.ok(single.blocks.some((b) => b.text === 'Just one'), 'an object with no array rendered nothing');
+  assert.ok(single.blocks.some((b) => b.text?.includes('score: 3')), 'a single resource lost its fields');
+});
+
+test('only json is read as json', () => {
+  assert.equal(jsonToHTML(html), null, 'an html page was parsed as json');
+  assert.equal(jsonToHTML(feed), null, 'a feed was parsed as json');
+  assert.equal(jsonToHTML('{"broken": '), null, 'invalid json did not fall through to the html path');
+  assert.equal(jsonToHTML('"a string"'), null, 'a bare scalar has no items to render');
+  // The feed path must still win for xml, and html must reach the html parser.
+  assert.ok(distill(feed, 'https://x.test/f').title.includes('Fixture Overflow'));
 });
 
 test('long runs of short links collapse into a range marker', () => {

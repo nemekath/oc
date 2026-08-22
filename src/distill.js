@@ -71,6 +71,18 @@ const REPEAT_MAX_LEN = 25;
 const clean = (s) => s.replace(/\s+/g, ' ').trim();
 
 /**
+ * Everything that is not a page, made into one. The compact view and both raw
+ * modes go through here, so a format is never readable in one of them and a
+ * blob in the other. Each converter recognises its own input and returns null
+ * otherwise, and HTML falls through untouched.
+ * @param {string} text
+ * @param {string} url
+ * @returns {string}
+ */
+const asHTML = (text, url = '', opts = {}) =>
+  jsonToHTML(text, url, opts) ?? youtubeToHTML(text) ?? transcriptToHTML(text) ?? feedToHTML(text) ?? text;
+
+/**
  * Reduce raw HTML to an interaction tree: readable text plus numbered
  * elements, in document order. The walk is deterministic and numbering is a
  * second pass over its result, so the same page always yields the same
@@ -80,7 +92,7 @@ const clean = (s) => s.replace(/\s+/g, ' ').trim();
  * @returns {Page}
  */
 export function distill(html, url = '') {
-  const { document } = parseHTML(youtubeToHTML(html) ?? transcriptToHTML(html) ?? feedToHTML(html) ?? html);
+  const { document } = parseHTML(asHTML(html, url));
   const title = clean(document.querySelector('title')?.textContent ?? '');
   /** @type {Block[]} */
   const blocks = [];
@@ -302,8 +314,10 @@ const bodyOf = (document) => document.querySelector('body') ?? document.document
  * hidden content.
  * @param {string} html
  */
-function cleanDocument(html) {
-  const { document } = parseHTML(youtubeToHTML(html) ?? transcriptToHTML(html) ?? feedToHTML(html) ?? html);
+function cleanDocument(html, url = '') {
+  // Raw is the mode an agent reaches for when the compact view left something
+  // out, so it is the one place a JSON response keeps every field.
+  const { document } = parseHTML(asHTML(html, url, { full: true }));
   // Read the title before the sweep below removes the head with it.
   const title = clean(document.querySelector('title')?.textContent ?? '');
   for (const tag of DROP) {
@@ -320,10 +334,12 @@ function cleanDocument(html) {
  * Whole-page markdown for `oc raw`, produced by turndown so lists, emphasis,
  * links, and code blocks come out as real markdown instead of flat lines.
  * @param {string} html
+ * @param {string} url - only read when the body turns out to be JSON, whose
+ *   title has to come from the endpoint because the payload has none
  * @returns {string}
  */
-export function toMarkdown(html) {
-  const { document, title } = cleanDocument(html);
+export function toMarkdown(html, url = '') {
+  const { document, title } = cleanDocument(html, url);
   const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
   const el = bodyOf(document);
   const body = el ? turndown.turndown(el.innerHTML).trim() : '';
@@ -334,10 +350,11 @@ export function toMarkdown(html) {
  * Whole-page cleaned HTML for `oc raw --html`, for agents that would rather
  * work with markup than markdown. Same noise removal, no other rewriting.
  * @param {string} html
+ * @param {string} url - see toMarkdown
  * @returns {string}
  */
-export function toHTML(html) {
-  const { document } = cleanDocument(html);
+export function toHTML(html, url = '') {
+  const { document } = cleanDocument(html, url);
   const el = bodyOf(document);
   return el ? el.innerHTML.trim() : '';
 }
@@ -487,6 +504,357 @@ export function transcriptToHTML(text) {
   }
   if (!lines.length) return null;
   return `<html><head><title>Transcript</title></head><body>\n<p>${escHTML(lines.join(' '))}</p>\n</body></html>`;
+}
+
+// Keys an API is likely to give the human-readable name of an item, in the
+// order they win when an item carries several of them.
+const TITLE_KEYS = [
+  'title', 'name', 'headline', 'subject', 'label', 'display_name',
+  'full_name', 'summary', 'question', 'message',
+];
+
+// Keys holding the item's own page. A URL under any other name is still found,
+// by looking at values rather than names, but these win when several qualify.
+const LINK_KEYS = ['link', 'url', 'html_url', 'web_url', 'permalink', 'href'];
+
+// A title has to fit on a line to be one. Anything longer is a body that
+// happens to live under a title-ish key, and belongs in a block of its own.
+const TITLE_MAX = 300;
+
+// How many constant fields the footer names before it stops counting them out.
+const CONST_LISTED = 8;
+
+// Characters of field text an item may spend in the compact view. A response
+// carries far more fields than an agent asked for: one Stack Exchange result
+// brings eight about the asker alone, which is the whole budget spent on who
+// rather than what. Thirty items make this thirty times over, so it buys two
+// or three fields, not a record. `oc raw` still has all of them.
+const FIELD_BUDGET = 60;
+
+// What a field from a flattened sub-object scores against one of the item's
+// own. `owner.user_id` varies perfectly and costs little, which is enough to
+// win on width and variance alone, but it identifies somebody attached to the
+// result rather than the result, and no agent searched for it.
+const NESTED_PENALTY = 0.25;
+
+// How many names the footer lists when it says which fields it left out.
+const DROPPED_LISTED = 5;
+
+// Seconds and milliseconds since the epoch, bounded either side so an ordinary
+// count (a score, a byte size) is never mistaken for a date.
+const EPOCH_S = [1e9, 4e9];
+const EPOCH_MS = [1e12, 4e12];
+const DATE_KEY = /(^|_)(date|at|time|timestamp|created|updated|published|modified)$/i;
+
+// Named entities worth knowing without a table: the five XML ones plus the
+// space. Everything else arrives numeric.
+const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+
+/**
+ * Undo one layer of HTML escaping in a string value. APIs that back an HTML
+ * site tend to escape the text they return: Stack Exchange answers with
+ * `Is &quot;==&quot; slower`, and re-escaping that on the way into a document
+ * would print the entity instead of the quote it stands for.
+ * @param {string} s
+ * @returns {string}
+ */
+const decodeEntities = (s) =>
+  s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, body) => {
+    if (body[0] === '#') {
+      const code = body[1] === 'x' || body[1] === 'X'
+        ? parseInt(body.slice(2), 16)
+        : Number(body.slice(1));
+      return Number.isInteger(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+    }
+    return ENTITIES[body.toLowerCase()] ?? whole;
+  });
+
+const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const isURL = (v) => typeof v === 'string' && /^https?:\/\/\S+$/.test(v);
+const looksHTML = (v) => typeof v === 'string' && /<\/?(p|div|pre|code|br|ul|ol|li|h[1-6]|blockquote|table|img|a|em|strong)\b[^>]*>/i.test(v);
+
+/**
+ * One level of flattening, so `owner: {display_name}` becomes an
+ * `owner.display_name` field. Deeper than that an object stops being a set of
+ * fields and starts being a document, which no line-per-item view can hold.
+ * @param {Record<string, any>} item
+ * @returns {Map<string, any>}
+ */
+function flattenItem(item) {
+  /** @type {Map<string, any>} */
+  const out = new Map();
+  for (const [key, value] of Object.entries(item)) {
+    if (!isPlain(value)) {
+      out.set(key, value);
+      continue;
+    }
+    for (const [inner, deep] of Object.entries(value)) {
+      if (deep !== null && typeof deep === 'object') continue;
+      out.set(`${key}.${inner}`, deep);
+    }
+  }
+  return out;
+}
+
+/**
+ * One field as one string. Epoch integers under a date-ish key become ISO
+ * dates, because an agent that has to convert one pays a turn for it. Arrays
+ * of scalars (tags, labels) join; arrays of objects are counted, since
+ * spelling them out is what the flattening above already refused to do.
+ * @param {string} key
+ * @param {any} value
+ * @returns {string}
+ */
+function renderValue(key, value) {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) {
+    if (!value.length) return '';
+    if (value.every((v) => v === null || typeof v !== 'object')) return value.join(', ');
+    return `[${value.length} items]`;
+  }
+  if (typeof value === 'object') return '';
+  if (typeof value === 'number' && Number.isInteger(value) && DATE_KEY.test(key)) {
+    const ms = value >= EPOCH_S[0] && value < EPOCH_S[1] ? value * 1000
+      : value >= EPOCH_MS[0] && value < EPOCH_MS[1] ? value
+      : null;
+    if (ms !== null) return new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
+  }
+  return typeof value === 'string' ? decodeEntities(value) : String(value);
+}
+
+/**
+ * Order fields by how much they say per character, and keep taking them while
+ * an item can still afford one. Variance is what carries the information: a
+ * field reading the same on every row has already been lifted out as a
+ * constant, and one reading differently every time is why the response was
+ * fetched. Dividing by width is what stops a long field (a profile image URL,
+ * a licence string) from crowding out three short ones that matter more.
+ * @param {Array<Map<string, string>|null>} rows
+ * @param {Set<string>} skip - fields already spoken for as title, link, or constant
+ * @returns {{kept: Set<string>, dropped: string[]}}
+ */
+function chooseFields(rows, skip) {
+  const present = rows.filter(Boolean);
+  const keys = [];
+  for (const row of present) {
+    for (const key of row.keys()) if (!skip.has(key) && !keys.includes(key)) keys.push(key);
+  }
+  const scored = [];
+  for (const key of keys) {
+    const values = present.map((row) => row.get(key) ?? '').filter((v) => v !== '');
+    if (!values.length) continue;
+    const width = values.reduce((sum, v) => sum + v.length + key.length + 3, 0) / values.length;
+    const variance = new Set(values).size / values.length;
+    const penalty = key.includes('.') ? NESTED_PENALTY : 1;
+    scored.push({ key, width, score: (variance / width) * penalty });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  const kept = new Set();
+  let spent = 0;
+  for (const field of scored) {
+    // The first field is taken whatever it costs, so an item of one long field
+    // still renders something rather than nothing.
+    if (spent + field.width > FIELD_BUDGET && kept.size) continue;
+    kept.add(field.key);
+    spent += field.width;
+  }
+  return { kept, dropped: scored.filter((f) => !kept.has(f.key)).map((f) => f.key) };
+}
+
+/**
+ * Pick the array the response is actually about: the root when it is one,
+ * otherwise the longest array of objects at the top level, which is where
+ * `items`, `data`, `results`, and `hits` all live. Everything beside it is
+ * metadata about the request rather than content.
+ * @param {any} data
+ * @returns {{items: any[], meta: Record<string, any>}}
+ */
+function mainArray(data) {
+  if (Array.isArray(data)) return { items: data, meta: {} };
+  let key = '';
+  /** @type {any[] | null} */
+  let items = null;
+  for (const [k, v] of Object.entries(data)) {
+    if (!Array.isArray(v) || !v.length) continue;
+    if (!v.some(isPlain)) continue;
+    if (!items || v.length > items.length) {
+      items = v;
+      key = k;
+    }
+  }
+  // A response with no array is a single resource, which renders as one item
+  // rather than as a special case.
+  if (!items) return { items: [data], meta: {} };
+  const meta = { ...data };
+  delete meta[key];
+  return { items, meta };
+}
+
+/**
+ * Fields whose rendered value is the same on every item. In a list of thirty
+ * results they are thirty copies of one fact, so they come out of the rows and
+ * get stated once at the foot of the page: the saving is the point of the
+ * exercise, and dropping them silently would be a lie about what the API said.
+ * @param {Array<Map<string, string>|null>} rows
+ * @returns {Map<string, string>}
+ */
+function constantFields(rows) {
+  const present = rows.filter(Boolean);
+  /** @type {Map<string, string>} */
+  const out = new Map();
+  if (present.length < 2) return out;
+  for (const [key, value] of present[0]) {
+    if (present.every((row) => row.get(key) === value)) out.set(key, value);
+  }
+  return out;
+}
+
+/**
+ * A JSON body is not a page, so nothing downstream can read one: the HTML
+ * parser turns it into a single unreadable text node and the budget truncates
+ * the blob. This turns a response into the same shape feedToHTML produces, one
+ * article per item, so numbering, the budget, `oc do`, and raw markdown all
+ * work on an API exactly as they do on a page.
+ *
+ * The view is a line per item rather than a table: two or three fields carry
+ * the signal in most responses, and turndown cannot write a markdown table
+ * without the GFM plugin, which is a dependency this project does not want.
+ * Returns null for anything that is not JSON.
+ * @param {string} text
+ * @param {string} url
+ * @param {{full?: boolean}} [opts] - full keeps every field, which is what the
+ *   raw modes are for; the compact view keeps the ones that earn their tokens
+ * @returns {string | null}
+ */
+export function jsonToHTML(text, url = '', { full = false } = {}) {
+  if (!/^\s*[[{]/.test(text.slice(0, 200))) return null;
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!data || typeof data !== 'object') return null;
+
+  const { items, meta } = mainArray(data);
+  const flats = items.map((item) => (isPlain(item) ? flattenItem(item) : null));
+  const rows = flats.map((flat) => {
+    if (!flat) return null;
+    /** @type {Map<string, string>} */
+    const row = new Map();
+    for (const [key, value] of flat) row.set(key, renderValue(key, value));
+    return row;
+  });
+
+  // One item's field names stand for all of them: a ragged response still gets
+  // a consistent title and link column, and a field missing from an item is
+  // simply absent from its line.
+  const sample = flats.find(Boolean) ?? new Map();
+  const titled = (k) => {
+    const v = sample.get(k);
+    return typeof v === 'string' && v.trim() && v.length <= TITLE_MAX && !isURL(v) && !looksHTML(v);
+  };
+  const titleKey = TITLE_KEYS.find(titled) ?? [...sample.keys()].find(titled);
+  const linkKey = LINK_KEYS.find((k) => isURL(sample.get(k))) ?? [...sample.keys()].find((k) => isURL(sample.get(k)));
+
+  const constants = constantFields(rows);
+  const spoken = new Set([titleKey, linkKey, ...constants.keys()].filter(Boolean));
+  const { kept, dropped } = full
+    ? { kept: null, dropped: [] }
+    : chooseFields(rows, spoken);
+  const parts = [];
+
+  for (let i = 0; i < items.length; i++) {
+    const flat = flats[i];
+    if (!flat) {
+      const line = renderValue('', items[i]);
+      if (line) parts.push(`<p>${escHTML(line)}</p>`);
+      continue;
+    }
+    const row = rows[i];
+    const title = titleKey ? row.get(titleKey) : '';
+    const link = linkKey && isURL(flat.get(linkKey)) ? flat.get(linkKey) : '';
+    const inline = [];
+    const long = [];
+    const bodies = [];
+    for (const [key, value] of flat) {
+      if (spoken.has(key)) continue;
+      // A field carrying markup is a document, and is kept whatever it scored:
+      // it renders as its own block, so it never competes for the field line.
+      if (kept && !kept.has(key) && !looksHTML(value)) continue;
+      // A field carrying HTML is a page in itself: `filter=withbody` on the
+      // Stack Exchange API puts a whole question in one. It goes through the
+      // distiller like any other markup instead of into a cell.
+      if (looksHTML(value)) {
+        bodies.push(String(value));
+        continue;
+      }
+      const rendered = row.get(key);
+      if (!rendered) continue;
+      if (rendered.length > TEXT_CAP) long.push(`<p>${escHTML(`${key}: ${rendered}`)}</p>`);
+      else inline.push(`${key}: ${rendered}`);
+    }
+
+    parts.push('<article>');
+    if (title && link) parts.push(`<p><a href="${escHTML(link)}">${escHTML(title)}</a></p>`);
+    else if (title) parts.push(`<p>${escHTML(title)}</p>`);
+    else if (link) parts.push(`<p><a href="${escHTML(link)}">open</a></p>`);
+    if (inline.length) parts.push(`<p>${escHTML(inline.join(' | '))}</p>`);
+    parts.push(...long);
+    for (const body of bodies) parts.push(`<div>${body}</div>`);
+    parts.push('</article>');
+  }
+
+  // What the rows no longer carry, said once. Empty-everywhere fields are
+  // named but not valued, because their value is the fact that there isn't one.
+  const shown = [...constants].filter(([, v]) => v !== '');
+  const empty = [...constants].filter(([, v]) => v === '').map(([k]) => k);
+  const clipped = (list, render) => {
+    const head = list.slice(0, CONST_LISTED).map(render).join(', ');
+    return list.length > CONST_LISTED ? `${head}, +${list.length - CONST_LISTED} more` : head;
+  };
+  if (shown.length) {
+    parts.push(`<p>same on every item: ${escHTML(clipped(shown, ([k, v]) => `${k}=${v.length > 60 ? `${v.slice(0, 60)}...` : v}`))}</p>`);
+  }
+  if (empty.length) parts.push(`<p>empty on every item: ${escHTML(clipped(empty, (k) => k))}</p>`);
+  if (dropped.length) {
+    const names = dropped.slice(0, DROPPED_LISTED).join(', ');
+    const more = dropped.length > DROPPED_LISTED ? `, +${dropped.length - DROPPED_LISTED} more` : '';
+    parts.push(`<p>${dropped.length} fields per item not shown (${escHTML(names + more)}), 'oc raw' has them</p>`);
+  }
+
+  const metaBits = [];
+  for (const [key, value] of Object.entries(meta)) {
+    if (value === null || typeof value === 'object') continue;
+    const rendered = renderValue(key, value);
+    if (rendered) metaBits.push(`${key}=${rendered}`);
+  }
+  if (metaBits.length) parts.push(`<p>response: ${escHTML(metaBits.join(', '))}</p>`);
+
+  const count = `${items.length} ${items.length === 1 ? 'item' : 'items'}`;
+  return `<html><head><title>${escHTML(jsonTitle(url, count))}</title></head><body>\n${parts.join('\n')}\n</body></html>`;
+}
+
+/**
+ * An API response has no title of its own, so the endpoint becomes one. The
+ * query parameter is worth the tokens it costs: it is the only part of a
+ * search URL that says what the page is, and without it every search a session
+ * runs is titled the same.
+ * @param {string} url
+ * @param {string} count
+ * @returns {string}
+ */
+function jsonTitle(url, count) {
+  try {
+    const u = new URL(url);
+    const query = ['q', 'query', 'search', 'terms', 'keywords', 'text']
+      .map((k) => u.searchParams.get(k))
+      .find((v) => v);
+    const base = `${u.host}${u.pathname}`.replace(/\/+$/, '');
+    return query ? `${base}: "${query}" (${count})` : `${base} (${count})`;
+  } catch {
+    return `JSON (${count})`;
+  }
 }
 
 /**

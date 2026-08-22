@@ -1,6 +1,7 @@
 {
   "domain": "stackoverflow.com",
   "commands": {
+    "search": { "open": "https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=relevance&site=stackoverflow&q={query}", "args": ["query"] },
     "question": { "open": "https://stackoverflow.com/feeds/question/{id}", "args": ["id"] },
     "tag": { "open": "https://stackoverflow.com/feeds/tag?tagnames={name}&sort=newest", "args": ["name"] },
     "user": { "open": "https://stackoverflow.com/feeds/user/{id}", "args": ["id"] },
