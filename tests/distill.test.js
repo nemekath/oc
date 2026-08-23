@@ -17,6 +17,8 @@ const results = () => distill(api, API_URL);
 // Turndown escapes the underscores in field names, which is correct markdown
 // and only noise to assert against.
 const rawApi = () => toMarkdown(api, API_URL).replace(/\\_/g, '_');
+const searchHTML = readFileSync(new URL('./pages/search.html', import.meta.url), 'utf8');
+const search = () => distill(searchHTML, 'https://fixture.test/html/?q=s3+cp+recursive');
 
 test('noise never reaches the output, compact or raw', () => {
   for (const out of [render(page(), { budget: 5000 }).text, toMarkdown(html), toHTML(html)]) {
@@ -383,4 +385,45 @@ test('long runs of short links collapse into a range marker', () => {
   assert.ok(text.includes('[6-15] 10 similar links'), `run not collapsed:\n${text}`);
   assert.ok(text.includes('actual content'), 'content after the run was lost');
   assert.ok(!text.includes('sub9'), 'collapsed link still rendered');
+});
+
+test('a result title that is a link stays a link', () => {
+  const headings = search().blocks.filter((b) => b.type === 'heading');
+  const [first, second] = headings;
+  assert.equal(first.text, 'cp - Fixture CLI Command Reference');
+  assert.ok(first.href.includes('docs.example.test'), 'the title anchor of a search result must survive');
+  assert.equal(second.href, 'https://docs.example.test/s3/index.html');
+});
+
+test('a heading that merely contains a link is not one', () => {
+  const headings = search().blocks.filter((b) => b.type === 'heading');
+  const partial = headings.find((b) => b.text.startsWith('Related searches'));
+  assert.equal(partial.href, undefined, 'the link is part of the heading, not the whole of it');
+  // Documentation hangs a permalink off every heading. Following one refetches
+  // the page the agent is already reading, so it must stay a read.
+  const pilcrow = headings.find((b) => b.text.startsWith('Options'));
+  assert.equal(pilcrow.href, undefined);
+  const selfAnchor = headings.find((b) => b.text === 'See also');
+  assert.equal(selfAnchor.href, undefined, 'a bare fragment is not a destination');
+});
+
+test('a truncated block ends on a sentence, so what is shown can be trusted', () => {
+  const first = 'Welcome to The Rust Programming Language, an introductory book about Rust.';
+  const second = ' The Rust programming language helps you write faster, more reliable software.';
+  const rest = ' High-level ergonomics and low-level control are often at odds with each other, and Rust challenges that conflict.';
+  const line = render(
+    { url: '', title: '', blocks: [{ n: 1, type: 'text', text: first + second + rest }] },
+    { budget: 60 },
+  ).text;
+  assert.ok(line.includes(second.trim()), 'a sentence that finished inside the cap must be shown whole');
+  assert.ok(!line.includes('High-level'), 'the sentence that did not finish must not be half shown');
+  assert.match(line, /\.\.\. \+\d+ chars/, 'and the reader must still be told there is more');
+
+  // Nothing to end on means the plain cut stands rather than most of the
+  // window being thrown away for the sake of a boundary.
+  const unbroken = render(
+    { url: '', title: '', blocks: [{ n: 1, type: 'text', text: `A. ${'word '.repeat(60)}` }] },
+    { budget: 60 },
+  ).text;
+  assert.ok(unbroken.length > TEXT_CAP, `an early sentence end must not shrink the view:\n${unbroken}`);
 });

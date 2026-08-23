@@ -11,7 +11,8 @@ const HELP = `only-cli: the web as a compact terminal, built for AI agents.
 usage: oc <command> [args] [flags]
 
   open <url>          fetch and render a page with numbered actions
-  find <query>        where a string appears on the page already open
+  find <query>        where a string appears on the page already open, or
+                      the region itself when only one place matches
   next                the next budget worth of the page already open
   read <n>            full text of the region at [n], up to 2000 tokens
   raw [url]           distilled markdown of the whole page
@@ -36,7 +37,8 @@ flags:
 
 'oc open' remembers the page it printed, so 'oc do 3' follows link [3] without
 you ever handling its URL, and 'oc next' or 'oc read 12' picks up what the
-budget left behind without fetching it again. State lives in ~/.only-cli
+budget left behind without fetching it again. 'oc do' on a search result title
+opens the result, because that title is a link. State lives in ~/.only-cli
 (override with OC_HOME).`;
 
 // A rendered page has to be remembered or its [3] means nothing to the next

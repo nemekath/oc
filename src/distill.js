@@ -7,7 +7,7 @@ import TurndownService from 'turndown';
  * @property {string} text
  * @property {number} [n] - action handle
  * @property {number} [level] - heading level 1..6
- * @property {string} [href] - links only
+ * @property {string} [href] - links, and a heading that is one
  * @property {string} [name] - inputs only
  *
  * @typedef {Object} Page
@@ -83,6 +83,29 @@ const asHTML = (text, url = '', opts = {}) =>
   jsonToHTML(text, url, opts) ?? youtubeToHTML(text) ?? transcriptToHTML(text) ?? feedToHTML(text) ?? text;
 
 /**
+ * The link a heading is, if it is one. A search engine puts the result title
+ * in an anchor inside an <h2>, so a heading can be the most followable thing
+ * on the page, and taking only its text threw that away.
+ *
+ * The heading has to BE the link, not merely contain one: exactly one anchor,
+ * labelled with the whole heading. Documentation fails that test on purpose.
+ * Every heading in the Rust book and every one on an AWS CLI reference page
+ * carries a permalink to its own id, so following those would refetch the
+ * page the agent is already reading, which is worse than the reading it
+ * already gets. A bare fragment is never a destination.
+ * @param {any} node - the heading element
+ * @param {string} text - its cleaned text
+ * @returns {string|null}
+ */
+function headingHref(node, text) {
+  const anchors = node.querySelectorAll('a[href]');
+  if (anchors.length !== 1) return null;
+  const href = anchors[0].getAttribute('href') ?? '';
+  if (!href || href.startsWith('#')) return null;
+  return clean(anchors[0].textContent) === text ? href : null;
+}
+
+/**
  * Reduce raw HTML to an interaction tree: readable text plus numbered
  * elements, in document order. The walk is deterministic and numbering is a
  * second pass over its result, so the same page always yields the same
@@ -126,7 +149,10 @@ export function distill(html, url = '') {
 
     if (/^h[1-6]$/.test(tag)) {
       const text = clean(node.textContent);
-      if (text) blocks.push({ type: 'heading', level: Number(tag[1]), text });
+      if (text) {
+        const href = headingHref(node, text);
+        blocks.push({ type: 'heading', level: Number(tag[1]), text, ...(href ? { href } : {}) });
+      }
       return;
     }
     if (tag === 'a' && node.getAttribute('href')) {

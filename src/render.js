@@ -24,7 +24,7 @@ const num = (v) => v.toLocaleString('en-US');
 // saving is only collected when the agent would have paged at all, while the
 // overspend is paid on every page that runs a little long, including the ones
 // answered by their first few lines. Four caps that overspend near 1,500 tokens.
-const FINISH = 4;
+export const FINISH = 4;
 
 /**
  * Budget-aware compact view of a distilled page. `from` is a position in the
@@ -162,5 +162,22 @@ export function formatBlock(b, { full = false } = {}) {
   }
 }
 
-const truncate = (s) =>
-  s.length > TEXT_CAP ? `${s.slice(0, TEXT_CAP)} ... +${num(s.length - TEXT_CAP)} chars` : s;
+// A cut inside a sentence makes the half that is shown untrustworthy. Asked
+// for the first sentence of a page, an agent was given it in full, followed by
+// a truncation marker, and spent a turn on `read` to find out whether the
+// sentence carried on. Ending on the last sentence that finished inside the cap
+// answers that in the view itself. The floor bounds what the courtesy costs: a
+// block whose only sentence end is early keeps the plain cut instead of
+// throwing away a third of the window.
+const SENTENCE_END = /[.!?]["')\]]*(?=\s)/g;
+const SENTENCE_FLOOR = 0.7;
+
+const truncate = (s) => {
+  if (s.length <= TEXT_CAP) return s;
+  let cut = TEXT_CAP;
+  for (const m of s.slice(0, TEXT_CAP).matchAll(SENTENCE_END)) {
+    const end = (m.index ?? 0) + m[0].length;
+    if (end >= TEXT_CAP * SENTENCE_FLOOR) cut = end;
+  }
+  return `${s.slice(0, cut).trimEnd()} ... +${num(s.length - cut)} chars`;
+};

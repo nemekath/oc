@@ -59,7 +59,8 @@ No setup at all also works: `npx @only-cli/oc` runs without a global install, an
 ```
 oc open <url>          fetch and render a page with numbered actions
 oc do <n>              follow the numbered link [n], or read [n] if it is text
-oc find <query>        where a string appears on the page already open
+oc find <query>        where a string appears on the page already open, or
+                       the region itself when only one place matches
 oc read <n>            full text of the region at [n], up to 2000 tokens
 oc next                the next budget worth of the page already open
 oc raw [url]           distilled markdown of the whole page
@@ -69,7 +70,7 @@ oc submit [n]          submit a form                            (planned)
 
 Flags: `--budget <tokens>` (default 500), `--json`, `--html` (raw as cleaned HTML), `--session <name>`, `--verbose`/`-v` (metrics on stderr, or export `OC_VERBOSE=1`).
 
-`oc open` remembers the page it rendered in a JSON file per session under `~/.only-cli` (override with `OC_HOME`), so `oc do 3` follows `[3]` without the agent ever handling a URL. Pages longer than the budget say what they left out; `oc find`, `oc read <n>`, and `oc next` read the rest without refetching the page. The budget is a target rather than a hard cap: a page that would only run a little long is printed whole rather than cut, since one extra tool call costs far more than the tokens it would have saved.
+`oc open` remembers the page it rendered in a JSON file per session under `~/.only-cli` (override with `OC_HOME`), so `oc do 3` follows `[3]` without the agent ever handling a URL. A result title on a search page is a link, so `oc do` on it opens the result rather than repeating the title. Pages longer than the budget say what they left out; `oc find`, `oc read <n>`, and `oc next` read the rest without refetching the page, and a `find` with a single match prints that region instead of the number to read it with. The budget is a target rather than a hard cap: a page that would only run a little long is printed whole rather than cut, since one extra tool call costs far more than the tokens it would have saved.
 
 ## Supported websites
 

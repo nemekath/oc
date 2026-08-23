@@ -9,7 +9,7 @@
  */
 
 import { DEFAULT_SESSION, handleFor, handleNumbers, loadSession, saveSession } from './session.js';
-import { estimateTokens, formatBlock, render } from './render.js';
+import { FINISH, estimateTokens, formatBlock, render } from './render.js';
 
 export class NotImplemented extends Error {
   constructor(command) {
@@ -63,7 +63,11 @@ export function activate(n, { session = DEFAULT_SESSION } = {}) {
     const range = nums.length ? `1-${Math.max(...nums)}` : 'none';
     throw new Error(`no [${n}] on ${state.url} (handles ${range}), run 'oc open <url>' again to renumber`);
   }
-  if (handle.type === 'text' || handle.type === 'heading') {
+  // A heading can be a link: on a search results page the result title is one,
+  // and opening it is what `do` was asked for. Reading the title back instead
+  // cost a turn, and then another to find the number that does navigate, so a
+  // heading that has an href falls through to the link below.
+  if ((handle.type === 'text' || handle.type === 'heading') && !handle.href) {
     // There is nothing to follow, but the agent asked to see what is at [n],
     // and that is what read prints. Refusing would spend a whole turn to name
     // the command that should have run, and a turn costs more than the page.
@@ -208,14 +212,41 @@ export function find(query, { session = DEFAULT_SESSION, budget = 500 } = {}) {
     return `no match for "${query}"${tried} in ${blocks.length} blocks on ${state.url}, try fewer words or 'oc raw' for the full text`;
   }
 
-  const lines = [`${hits.length} ${hits.length === 1 ? 'match' : 'matches'} for "${query}"${loose ? ', matching the words separately' : ''}`];
+  const separately = loose ? ', matching the words separately' : '';
+
+  // One match is not an index, it is the answer. Naming the number and
+  // stopping spends a turn to say where to look, and the agent's next command
+  // is always the `read` that looks, so find does the reading. Measured on an
+  // AWS CLI reference page, `find "Example 7"` printed a 24 token heading and
+  // the example it names was in the block after it.
+  if (hits.length === 1 && hits[0].n != null) {
+    const only = hits[0];
+    const follow = only.type === 'link' ? 'do <n> | ' : '';
+    return [
+      `1 match for "${query}"${separately}, region [${only.n}]`,
+      read(only.n, { session, budget: budget * FINISH }),
+      `actions: ${follow}read <n> | next | raw`,
+    ].join('\n');
+  }
+
+  const lines = [`${hits.length} ${hits.length === 1 ? 'match' : 'matches'} for "${query}"${separately}`];
+  // A snippet is short because many matches have to share one screen. When
+  // every match would fit whole inside the allowance a page already gets for
+  // finishing (render's FINISH), showing them whole makes this command the
+  // answer instead of an index into a `read <n>` that has to run next. The
+  // trade is the same one FINISH documents, and it is not close: a few
+  // hundred tokens against a turn.
+  const label = (hit, text) => `[${hit.n ?? '?'}] ${text}`;
+  const whole = hits.reduce((n, h) => n + estimateTokens(label(h, h.text)) + 1, estimateTokens(lines[0]));
+  const full = whole <= budget * FINISH;
+  const cap = full ? budget * FINISH : budget;
   let spent = estimateTokens(lines[0]);
   let shown = 0;
   let hasLinks = false;
   for (const hit of hits) {
-    const line = `[${hit.n ?? '?'}] ${hit.snippet}`;
+    const line = label(hit, full ? hit.text : hit.snippet);
     const cost = estimateTokens(line) + 1;
-    if (spent + cost > budget && shown) break;
+    if (spent + cost > cap && shown) break;
     spent += cost;
     shown++;
     if (hit.type === 'link') hasLinks = true;
@@ -252,7 +283,7 @@ function search(blocks, terms) {
     const start = Math.max(0, Math.min(...found) - BEFORE);
     const end = Math.min(block.text.length, start + SNIPPET);
     const snippet = `${start > 0 ? '... ' : ''}${block.text.slice(start, end)}${end < block.text.length ? ' ...' : ''}`;
-    out.push({ n, type: block.type, snippet });
+    out.push({ n, type: block.type, snippet, text: block.text });
   }
   return out;
 }

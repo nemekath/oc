@@ -14,6 +14,7 @@ const { sessionFromPage, saveSession, loadSession, resolveHref } = await import(
 const { render } = await import('../src/render.js');
 
 const html = readFileSync(new URL('./pages/news.html', import.meta.url), 'utf8');
+const searchHTML = readFileSync(new URL('./pages/search.html', import.meta.url), 'utf8');
 const page = () => distill(html, 'https://example.test/news');
 const open = (name = 'default', budget = 500) => {
   const p = page();
@@ -77,10 +78,36 @@ test('find reports where a string is, with a number to read it by', () => {
 });
 
 test('find opens the snippet on the match, not on the start of a long block', () => {
+  // Several long blocks holding the same term is what puts find on its
+  // snippet path: too much to print whole, too many to be the one answer.
+  const filler = 'x'.repeat(300);
+  saveSession('long', {
+    url: 'https://example.test/long',
+    blocks: [1, 2, 3].map((n) => ({ n, type: 'text', text: `${filler} needle ${filler}` })),
+    cursor: null,
+  });
+  const out = find('needle', { session: 'long', budget: 40 });
+  assert.match(out, /\[1\] \.\.\. .*needle/, 'the window must open on the match');
+  assert.ok(!out.includes('x'.repeat(250)), `snippet was not trimmed:\n${out.slice(0, 200)}`);
+});
+
+test('find answers with the whole match when the matches fit', () => {
   open();
+  // The point of the whole path: the text an agent would have spent a `read
+  // <n>` on arrives in the command that found it.
+  const many = find('fixture');
+  assert.ok(!many.includes('...'), `nothing should be elided:\n${many}`);
+  assert.ok(many.includes('which this sentence now safely does'), 'the block must arrive whole');
+});
+
+test('a single match is read, not pointed at', () => {
+  open();
+  // One hit means the agent has already said where it wants to look, so the
+  // number alone would cost a turn to resolve into the region behind it.
   const out = find('lazy dog');
-  assert.match(out, /\[9\] \.\.\. .*lazy dog/);
-  assert.ok(out.length < 400, `snippet was not trimmed:\n${out}`);
+  assert.match(out, /1 match for "lazy dog", region \[9\]/);
+  assert.ok(out.includes('which this sentence now safely does'), 'the region must arrive with it');
+  assert.ok(out.includes('## [8] About'), 'and with the heading that gives it context');
 });
 
 test('a phrase that matches nothing falls back to the words, and says so', () => {
@@ -93,7 +120,7 @@ test('a phrase that matches nothing falls back to the words, and says so', () =>
 
 test('find caps its own output and says how many it held back', () => {
   open();
-  const out = find('comments', { budget: 12 });
+  const out = find('comments', { budget: 3 });
   assert.match(out, /\.\.\. \d+ more matches/);
 });
 
@@ -154,6 +181,22 @@ test('do on a heading or a text block reads it instead of refusing', () => {
   assert.deepEqual(activate(1), { read: 1, text: 'Fixture News' });
   assert.equal(activate(9).read, 9);
   assert.ok(read(activate(9).read).includes('safely does'), 'the read must be the full text');
+});
+
+test('do on a search result title opens it instead of reading it back', () => {
+  // What this costs when it goes wrong: `do` on the most obvious number on a
+  // results page, the title, used to print the title back, so the agent spent
+  // one turn learning nothing and another finding the number that navigates.
+  const p = distill(searchHTML, 'https://fixture.test/html/?q=s3+cp+recursive');
+  saveSession('search', sessionFromPage(p, null, { cursor: render(p, { budget: 500 }).stats.next }));
+  const target = activate(1, { session: 'search' });
+  assert.equal(target.read, undefined, 'a title that is a link must not be read back');
+  // The engine wraps its results in a click tracker whose landing page is a
+  // script, so the handle has to resolve to the destination itself.
+  assert.equal(target.url, 'https://docs.example.test/s3/cp.html');
+
+  const pilcrow = p.blocks.find((b) => b.type === 'heading' && b.text.startsWith('Options'));
+  assert.equal(activate(pilcrow.n, { session: 'search' }).read, pilcrow.n, 'a permalink heading still reads');
 });
 
 test('named sessions keep separate page state', () => {
