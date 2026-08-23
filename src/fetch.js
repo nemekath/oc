@@ -8,7 +8,10 @@
  */
 
 import dns from 'node:dns/promises';
+import http from 'node:http';
+import https from 'node:https';
 import net from 'node:net';
+import tls from 'node:tls';
 
 // The fetch fallback can't fake a TLS fingerprint like impers does, but it
 // should at least send the same Chrome identity in its headers.
@@ -146,6 +149,214 @@ async function assertSafeTarget(urlStr) {
   }
 }
 
+function envFirst(env, ...names) {
+  for (const name of names) {
+    const value = env[name];
+    if (value) return value;
+  }
+}
+
+function normalizeProxy(value) {
+  if (value == null) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+}
+
+// Split host[:port], including [IPv6]:port. A trailing :digits is a port;
+// anything else stays part of the hostname so NO_PROXY=example.com matches.
+function splitHostPort(entry) {
+  if (entry.startsWith('[')) {
+    const end = entry.indexOf(']');
+    if (end === -1) return { host: entry, port: '' };
+    const rest = entry.slice(end + 1);
+    return { host: entry.slice(1, end), port: rest.startsWith(':') ? rest.slice(1) : '' };
+  }
+  const colon = entry.lastIndexOf(':');
+  if (colon !== -1 && /^\d+$/.test(entry.slice(colon + 1))) {
+    return { host: entry.slice(0, colon), port: entry.slice(colon + 1) };
+  }
+  return { host: entry, port: '' };
+}
+
+function bypassesProxy(target, noProxy) {
+  const list = noProxy.trim();
+  if (!list) return false;
+  const hostname = target.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const port = target.port || (target.protocol === 'https:' ? '443' : '80');
+  for (let entry of list.split(',')) {
+    entry = entry.trim();
+    if (!entry) continue;
+    if (entry === '*') return true;
+    const { host: rawHost, port: entryPort } = splitHostPort(entry);
+    if (entryPort && entryPort !== port) continue;
+    const host = rawHost.toLowerCase().replace(/^\[|\]$/g, '').replace(/^\./, '');
+    if (!host) continue;
+    if (hostname === host || hostname.endsWith(`.${host}`)) return true;
+  }
+  return false;
+}
+
+/**
+ * Pick a proxy for this URL from HTTP_PROXY / HTTPS_PROXY / NO_PROXY (and
+ * their lowercase forms). The proxy host is not run through assertSafeTarget:
+ * corporate proxies live on loopback or RFC 1918 addresses, and they are not
+ * the page being fetched. Redirect hops still go through that check.
+ * @param {string} url
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {string | null} proxy URL, or null to connect directly
+ */
+export function resolveProxy(url, env = process.env) {
+  const target = new URL(url);
+  if (bypassesProxy(target, envFirst(env, 'NO_PROXY', 'no_proxy') ?? '')) return null;
+  const httpsProxy = envFirst(env, 'HTTPS_PROXY', 'https_proxy');
+  const httpProxy = envFirst(env, 'HTTP_PROXY', 'http_proxy');
+  const chosen = target.protocol === 'https:' ? (httpsProxy || httpProxy) : httpProxy;
+  return normalizeProxy(chosen);
+}
+
+function proxyAuthHeader(proxy) {
+  if (!proxy.username) return undefined;
+  const token = Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString('base64');
+  return `Basic ${token}`;
+}
+
+function authority(target) {
+  const host = net.isIP(target.hostname) === 6 ? `[${target.hostname}]` : target.hostname;
+  const port = target.port || (target.protocol === 'https:' ? '443' : '80');
+  return `${host}:${port}`;
+}
+
+function wrapNodeResponse(res, url) {
+  const headers = {
+    get(name) {
+      const v = res.headers[name.toLowerCase()];
+      if (v == null) return null;
+      return Array.isArray(v) ? v.join(', ') : v;
+    },
+  };
+  const text = () => new Promise((resolve, reject) => {
+    const chunks = [];
+    res.on('data', (c) => chunks.push(c));
+    res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    res.on('error', reject);
+  });
+  const status = res.statusCode ?? 0;
+  return {
+    status,
+    statusText: res.statusMessage || '',
+    headers,
+    ok: status >= 200 && status < 300,
+    url,
+    text,
+  };
+}
+
+function proxyTransport(proxy) {
+  return proxy.protocol === 'https:' ? https : http;
+}
+
+function proxyPort(proxy) {
+  return Number(proxy.port) || (proxy.protocol === 'https:' ? 443 : 80);
+}
+
+function httpViaProxy(target, proxy, headers) {
+  const auth = proxyAuthHeader(proxy);
+  return new Promise((resolve, reject) => {
+    const req = proxyTransport(proxy).request({
+      hostname: proxy.hostname,
+      port: proxyPort(proxy),
+      method: 'GET',
+      path: target.href,
+      headers: {
+        ...headers,
+        host: target.host,
+        ...(auth && { 'proxy-authorization': auth }),
+      },
+    }, (res) => resolve(wrapNodeResponse(res, target.href)));
+    req.on('error', (err) => reject(new Error(`proxy failed: ${err.message} for ${target.href}`)));
+    req.end();
+  });
+}
+
+function httpsViaConnect(target, proxy, headers, tlsOpts = {}) {
+  const dest = authority(target);
+  const auth = proxyAuthHeader(proxy);
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      req.destroy();
+      reject(err instanceof Error ? err : new Error(String(err)));
+    };
+    const req = proxyTransport(proxy).request({
+      hostname: proxy.hostname,
+      port: proxyPort(proxy),
+      method: 'CONNECT',
+      path: dest,
+      headers: {
+        host: dest,
+        ...(auth && { 'proxy-authorization': auth }),
+      },
+    });
+    req.on('connect', (res, socket, head) => {
+      if (res.statusCode !== 200) {
+        socket.destroy();
+        fail(new Error(`proxy CONNECT failed: ${res.statusCode} for ${target.href}`));
+        return;
+      }
+      if (head.length) socket.unshift(head);
+      // tls.connect already opened the tunnel. https.request would wrap TLS
+      // again, and the origin would see a second ClientHello as garbage.
+      // SNI is a hostname; an IP literal is only used for the cert check.
+      const hostname = target.hostname;
+      const tlsSocket = tls.connect({
+        socket,
+        host: hostname,
+        ...(net.isIP(hostname) ? {} : { servername: hostname }),
+        ...tlsOpts,
+      }, () => {
+        const tunneled = http.request({
+          createConnection: () => tlsSocket,
+          path: `${target.pathname}${target.search}`,
+          method: 'GET',
+          headers: { ...headers, host: target.host },
+        }, (httpsRes) => {
+          if (settled) return;
+          settled = true;
+          resolve(wrapNodeResponse(httpsRes, target.href));
+        });
+        tunneled.on('error', (err) => fail(new Error(`proxy failed: ${err.message || err.code} for ${target.href}`)));
+        tunneled.end();
+      });
+      tlsSocket.on('error', (err) => fail(new Error(`proxy failed: ${err.message || err.code} for ${target.href}`)));
+    });
+    req.on('error', (err) => fail(new Error(`proxy failed: ${err.message || err.code} for ${target.href}`)));
+    req.end();
+  });
+}
+
+/**
+ * One GET through an HTTP(S) proxy. HTTP targets use the absolute-URI form;
+ * HTTPS targets open a CONNECT tunnel first. Redirects are not followed:
+ * followRedirects owns that so each hop still goes through assertSafeTarget.
+ * @param {string} url
+ * @param {string} proxy
+ * @param {Record<string, string>} [headers]
+ * @param {import('node:tls').ConnectionOptions} [tlsOpts]
+ */
+export function proxyGet(url, proxy, headers = {}, tlsOpts = {}) {
+  const target = new URL(url);
+  const proxyUrl = new URL(proxy);
+  if (!/^https?:$/.test(proxyUrl.protocol)) {
+    throw new Error(`unsupported proxy protocol (${proxyUrl.protocol.slice(0, -1)}), oc honors HTTP and HTTPS proxies`);
+  }
+  return target.protocol === 'https:'
+    ? httpsViaConnect(target, proxyUrl, headers, tlsOpts)
+    : httpViaProxy(target, proxyUrl, headers);
+}
+
 /**
  * Fetch a page.
  * @param {string} url - with or without a scheme, https is assumed
@@ -190,10 +401,19 @@ export async function followRedirects(get, start) {
   }
 }
 
+const FETCH_HEADERS = {
+  'user-agent': UA,
+  accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'accept-language': 'en-US,en;q=0.9',
+};
+
 async function viaImpers(impers, target) {
   // Some sites (Reddit) 403 the chrome fingerprint but accept firefox, so a
   // blocked first attempt gets one cheap retry with a second identity.
-  const asking = (impersonate) => (url) => impers.get(url, { impersonate, allowRedirects: false });
+  const asking = (impersonate) => (url) => {
+    const proxy = resolveProxy(url);
+    return impers.get(url, { impersonate, allowRedirects: false, ...(proxy && { proxy }) });
+  };
   let via = 'impers:chrome';
   let { res } = await followRedirects(asking('chrome'), target);
   let status = res.status ?? res.statusCode ?? 0;
@@ -209,14 +429,12 @@ async function viaImpers(impers, target) {
 }
 
 async function viaFetch(target) {
-  const { res, url: current } = await followRedirects((url) => fetch(url, {
-    redirect: 'manual',
-    headers: {
-      'user-agent': UA,
-      accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'accept-language': 'en-US,en;q=0.9',
-    },
-  }), target);
+  const { res, url: current } = await followRedirects((url) => {
+    const proxy = resolveProxy(url);
+    return proxy
+      ? proxyGet(url, proxy, FETCH_HEADERS)
+      : fetch(url, { redirect: 'manual', headers: FETCH_HEADERS });
+  }, target);
   if (!res.ok) {
     throw new Error(`fetch failed: ${res.status} ${res.statusText} for ${current}`);
   }

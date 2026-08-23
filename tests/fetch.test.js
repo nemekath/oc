@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
+import https from 'node:https';
+import net from 'node:net';
 
-const { fetchPage, followRedirects } = await import('../src/fetch.js');
+const { fetchPage, followRedirects, resolveProxy, proxyGet } = await import('../src/fetch.js');
 
 const BLOCKED_MESSAGE = 'blocked: private or internal URL';
 
@@ -134,4 +137,237 @@ test('the readable-type gate accepts text and refuses binary, on either transpor
     assert.throws(() => assertReadableType(type), /not a page oc can read/, `expected ${type} to be refused`);
   }
   assert.throws(() => assertReadableType('image/png'), /image\/png/);
+});
+
+test('resolveProxy reads the usual env vars and honors NO_PROXY', () => {
+  const none = {};
+  assert.equal(resolveProxy('https://example.com', none), null);
+
+  assert.equal(
+    resolveProxy('https://example.com', { HTTPS_PROXY: 'http://proxy.corp:8080' }),
+    'http://proxy.corp:8080',
+  );
+  assert.equal(
+    resolveProxy('https://example.com', { HTTP_PROXY: 'http://proxy.corp:8080' }),
+    'http://proxy.corp:8080',
+  );
+  assert.equal(
+    resolveProxy('http://example.com', { HTTP_PROXY: 'http://proxy.corp:8080' }),
+    'http://proxy.corp:8080',
+  );
+  assert.equal(
+    resolveProxy('http://example.com', { HTTPS_PROXY: 'http://secure-proxy.corp:8080' }),
+    null,
+  );
+  assert.equal(
+    resolveProxy('https://example.com', { http_proxy: 'proxy.corp:8080' }),
+    'http://proxy.corp:8080',
+  );
+
+  assert.equal(
+    resolveProxy('https://example.com/foo', { HTTPS_PROXY: 'http://proxy.corp:8080', NO_PROXY: 'example.com' }),
+    null,
+  );
+  assert.equal(
+    resolveProxy('https://foo.example.com', { HTTPS_PROXY: 'http://proxy.corp:8080', NO_PROXY: '.example.com' }),
+    null,
+  );
+  assert.equal(
+    resolveProxy('https://elsewhere.test', { HTTPS_PROXY: 'http://proxy.corp:8080', NO_PROXY: 'example.com' }),
+    'http://proxy.corp:8080',
+  );
+  assert.equal(
+    resolveProxy('https://example.com', { HTTPS_PROXY: 'http://proxy.corp:8080', no_proxy: '*' }),
+    null,
+  );
+  assert.equal(
+    resolveProxy('https://example.com:8443', { HTTPS_PROXY: 'http://proxy.corp:8080', NO_PROXY: 'example.com:8443' }),
+    null,
+  );
+  assert.equal(
+    resolveProxy('https://example.com:8443', { HTTPS_PROXY: 'http://proxy.corp:8080', NO_PROXY: 'example.com:443' }),
+    'http://proxy.corp:8080',
+  );
+});
+
+test('a private page URL is still blocked when a proxy is configured', async () => {
+  // The proxy itself is often loopback; that must not punch a hole in the
+  // page-target guard. fetchPage rejects before any socket is opened.
+  const keys = ['HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy'];
+  const prev = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  for (const k of keys) delete process.env[k];
+  process.env.HTTP_PROXY = 'http://127.0.0.1:8080';
+  process.env.HTTPS_PROXY = 'http://127.0.0.1:8080';
+  try {
+    await assert.rejects(() => fetchPage('127.0.0.1'), new RegExp(BLOCKED_MESSAGE));
+    await assert.rejects(() => fetchPage('https://192.168.1.1/admin'), new RegExp(BLOCKED_MESSAGE));
+  } finally {
+    for (const k of keys) {
+      if (prev[k] === undefined) delete process.env[k];
+      else process.env[k] = prev[k];
+    }
+  }
+});
+
+function listen(server) {
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => resolve(server.address().port));
+  });
+}
+
+test('proxyGet sends an absolute-URI GET to an HTTP proxy', async () => {
+  const seen = [];
+  const proxy = http.createServer((req, res) => {
+    seen.push({
+      method: req.method,
+      url: req.url,
+      host: req.headers.host,
+      ua: req.headers['user-agent'],
+      auth: req.headers['proxy-authorization'],
+    });
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end('<html><title>via proxy</title></html>');
+  });
+  const port = await listen(proxy);
+  try {
+    const res = await proxyGet(
+      'http://example.test/page',
+      `http://user:secret@127.0.0.1:${port}`,
+      { 'user-agent': 'oc-test' },
+    );
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'text/html');
+    assert.equal(await res.text(), '<html><title>via proxy</title></html>');
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].method, 'GET');
+    assert.equal(seen[0].url, 'http://example.test/page');
+    assert.equal(seen[0].host, 'example.test');
+    assert.equal(seen[0].ua, 'oc-test');
+    assert.equal(seen[0].auth, `Basic ${Buffer.from('user:secret').toString('base64')}`);
+  } finally {
+    proxy.close();
+  }
+});
+
+test('proxyGet issues CONNECT for an HTTPS target and fails loud on a refused tunnel', async () => {
+  const seen = [];
+  const proxy = http.createServer();
+  proxy.on('connect', (req, socket) => {
+    seen.push({ url: req.url, auth: req.headers['proxy-authorization'] });
+    socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+    socket.end();
+  });
+  const port = await listen(proxy);
+  try {
+    await assert.rejects(
+      () => proxyGet('https://example.test/page', `http://127.0.0.1:${port}`),
+      /proxy CONNECT failed: 403/,
+    );
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].url, 'example.test:443');
+  } finally {
+    proxy.close();
+  }
+});
+
+// Self-signed localhost cert so the HTTPS success path can run offline. The
+// client is handed the same cert as `ca`, so verification stays on.
+const LOCAL_CERT = `-----BEGIN CERTIFICATE-----
+MIIBmDCCAT+gAwIBAgIUMrBi6hKtC1hrvo+Ttf70VHSofLkwCgYIKoZIzj0EAwIw
+FDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MDgyMzE1MzU1MFoXDTM2MDgyMDE1
+MzU1MFowFDESMBAGA1UEAwwJbG9jYWxob3N0MFkwEwYHKoZIzj0CAQYIKoZIzj0D
+AQcDQgAESbtFNb5R3K9iqcJJ6J9HII9DRylOGKutU+uoJ4TTsopcsRz2jMns8UYa
++oABlqC0ef+LAcaTwkPHgTwzfS1GuqNvMG0wHQYDVR0OBBYEFPPKq83hQvf8KTZB
+r0bMcGIo18wBMB8GA1UdIwQYMBaAFPPKq83hQvf8KTZBr0bMcGIo18wBMA8GA1Ud
+EwEB/wQFMAMBAf8wGgYDVR0RBBMwEYIJbG9jYWxob3N0hwR/AAABMAoGCCqGSM49
+BAMCA0cAMEQCIHBWYJSTt1qGyhySr2CY+JYWFdpApMvHVqED54/GivKcAiBchJFW
+8FrIy8Paiv8v+us5Ahlpr1QheS5LZX+LUWPUIg==
+-----END CERTIFICATE-----`;
+
+const LOCAL_KEY = `-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgtusH8iEEA2S7nGrF
+DrJVWIHwY2v4DoYibYK0wTwAQEuhRANCAARJu0U1vlHcr2Kpwknon0cgj0NHKU4Y
+q61T66gnhNOyilyxHPaMyezxRhr6gAGWoLR5/4sBxpPCQ8eBPDN9LUa6
+-----END PRIVATE KEY-----`;
+
+test('proxyGet returns the origin body through an HTTPS CONNECT tunnel', async () => {
+  // The 403 test above only proves we open the tunnel. This one proves the
+  // GET after TLS actually reaches the origin: the old path wrapped TLS twice
+  // and the origin never saw a request.
+  const originGot = [];
+  const origin = https.createServer({ cert: LOCAL_CERT, key: LOCAL_KEY }, (req, res) => {
+    originGot.push({ method: req.method, url: req.url, host: req.headers.host, ua: req.headers['user-agent'] });
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end('<html><title>via tunnel</title></html>');
+  });
+  const originPort = await listen(origin);
+
+  const connected = [];
+  const proxy = http.createServer();
+  proxy.on('connect', (req, socket) => {
+    connected.push(req.url);
+    const { hostname, port } = new URL(`http://${req.url}`);
+    const dest = net.connect(Number(port), hostname, () => {
+      socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+      dest.pipe(socket);
+      socket.pipe(dest);
+    });
+    dest.on('error', () => socket.destroy());
+  });
+  const proxyPort = await listen(proxy);
+
+  try {
+    const res = await proxyGet(
+      `https://127.0.0.1:${originPort}/page`,
+      `http://127.0.0.1:${proxyPort}`,
+      { 'user-agent': 'oc-test' },
+      { ca: LOCAL_CERT },
+    );
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'text/html');
+    assert.equal(await res.text(), '<html><title>via tunnel</title></html>');
+    assert.deepEqual(connected, [`127.0.0.1:${originPort}`]);
+    assert.deepEqual(originGot, [{
+      method: 'GET',
+      url: '/page',
+      host: `127.0.0.1:${originPort}`,
+      ua: 'oc-test',
+    }]);
+  } finally {
+    origin.close();
+    proxy.close();
+  }
+});
+
+test('followRedirects still blocks a private hop when the transport is a proxy', async () => {
+  // The page 302s to loopback. The proxy is also loopback, which is allowed;
+  // the hop is not. Blocked before the second request goes out.
+  let n = 0;
+  const proxy = http.createServer((req, res) => {
+    n += 1;
+    if (n === 1) {
+      res.writeHead(302, { location: 'http://127.0.0.1/admin' });
+      res.end();
+      return;
+    }
+    res.writeHead(200);
+    res.end('should not happen');
+  });
+  const port = await listen(proxy);
+  try {
+    await assert.rejects(
+      () => followRedirects((url) => proxyGet(url, `http://127.0.0.1:${port}`), 'http://public.example/start'),
+      new RegExp(BLOCKED_MESSAGE),
+    );
+    assert.equal(n, 1);
+  } finally {
+    proxy.close();
+  }
+});
+
+test('proxyGet refuses a non-HTTP proxy scheme', () => {
+  assert.throws(
+    () => proxyGet('https://example.test/', 'socks5://127.0.0.1:1080'),
+    /unsupported proxy protocol \(socks5\)/,
+  );
 });
