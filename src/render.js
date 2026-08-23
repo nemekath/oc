@@ -174,6 +174,12 @@ const SENTENCE_FLOOR = 0.7;
 
 const truncate = (s) => {
   if (s.length <= TEXT_CAP) return s;
+  // A line is to code what a sentence is to prose, and a code block is the only
+  // text that keeps its newlines, so the same courtesy applies: cut where a
+  // line ended. A period in code ends nothing, which is why this returns
+  // instead of falling through to the sentence rule below.
+  const line = s.slice(0, TEXT_CAP).lastIndexOf('\n');
+  if (line >= TEXT_CAP * SENTENCE_FLOOR) return `${s.slice(0, line)} ... +${num(s.length - line)} chars`;
   let cut = TEXT_CAP;
   for (const m of s.slice(0, TEXT_CAP).matchAll(SENTENCE_END)) {
     const end = (m.index ?? 0) + m[0].length;

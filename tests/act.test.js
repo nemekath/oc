@@ -212,3 +212,22 @@ test('history grows with each page and stays bounded', () => {
   assert.equal(state.history.length, 20);
   assert.equal(state.history.at(-1), 'https://example.test/p24');
 });
+
+test('a snippet stays one line even when the block it came from is code', () => {
+  // Code blocks keep their newlines. An index that prints one match per line
+  // cannot, or the header's count stops matching what is on screen. Long
+  // filler beside it is what keeps find on the snippet path.
+  const filler = 'x'.repeat(600);
+  saveSession('code', {
+    url: 'https://fixture.test/c',
+    blocks: [
+      { n: 1, type: 'text', text: ['first();', 'needle();', 'third();'].join('\n') },
+      { n: 2, type: 'text', text: `${filler} needle ${filler}` },
+    ],
+    cursor: null,
+  });
+  const out = find('needle', { session: 'code', budget: 20 });
+  const lines = out.split('\n');
+  assert.match(lines[0], /^2 matches for "needle"/);
+  assert.equal(lines[1], '[1] first(); needle(); third();');
+});

@@ -282,7 +282,11 @@ function search(blocks, terms) {
     if (out.length && out.at(-1).n === n) continue;
     const start = Math.max(0, Math.min(...found) - BEFORE);
     const end = Math.min(block.text.length, start + SNIPPET);
-    const snippet = `${start > 0 ? '... ' : ''}${block.text.slice(start, end)}${end < block.text.length ? ' ...' : ''}`;
+    // One line per match is the promise the list makes, and a code block is the
+    // one kind of block that carries lines of its own. They survive where they
+    // are read rather than indexed: the whole-match mode above, and `read`.
+    const window = block.text.slice(start, end).replace(/\n/g, ' ');
+    const snippet = `${start > 0 ? '... ' : ''}${window}${end < block.text.length ? ' ...' : ''}`;
     out.push({ n, type: block.type, snippet, text: block.text });
   }
   return out;

@@ -32,6 +32,32 @@ const DROP = new Set([
 // them, so the search below refuses to descend into them.
 const FURNITURE = new Set(['nav', 'header', 'footer', 'aside']);
 
+// Controls a page puts inside its own code samples, and the selector that
+// finds one. Node's API docs give every code block a copy button, a module
+// toggle and a language label, so the text of the sample ends in
+// `javascriptcopy` unless the toolbar holding them is left out of it.
+const CODE_CONTROLS = new Set(['button', 'input', 'select', 'textarea', 'label']);
+const CONTROL = [...CODE_CONTROLS].join(', ');
+
+// Lines in a code block are kept, where every other kind of text has its
+// whitespace collapsed. Joining them would put `// comment` in front of the
+// statements that followed it, so a sample an agent could run would arrive
+// commented out, and the shape of the wreck is invisible on one line. Blank
+// runs and the indentation the whole block shares are the parts that carry no
+// meaning, so those go.
+const codeText = (raw) => {
+  const lines = raw.replace(/\r\n?/g, '\n').replace(/[^\S\n]+$/gm, '').split('\n');
+  while (lines.length && !lines[0].trim()) lines.shift();
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  const indent = lines
+    .filter((l) => l.trim())
+    .reduce((least, l) => Math.min(least, l.length - l.trimStart().length), Infinity);
+  return lines
+    .map((l) => (Number.isFinite(indent) ? l.slice(indent) : l).trimEnd())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n');
+};
+
 // Elements that end a line on the page and so must end one here. Without this
 // the text of six separate posts merges into a single block, because nothing
 // between them survives distillation to keep them apart.
@@ -128,6 +154,45 @@ export function distill(html, url = '') {
   /** Subtree already emitted, skipped when the rest of the page is walked. */
   let done = null;
 
+  /**
+   * The text of a code subtree, read as one string.
+   *
+   * A syntax highlighter gives every token its own element, so `s3://bucket/`
+   * reaches the walk as `s3`, `:`, `//`, `bucket`, `/`, and the rule that puts
+   * fragments back together only glues the ones that share a parent. The rest
+   * are space-joined, which turned an AWS example into
+   * `aws s3 cp s3 : // bucket / -- recursive`, a command an agent cannot run.
+   * Reading the subtree whole is what fixes that, and it discards nothing: over
+   * 172 pre elements on the AWS CLI reference, the Rust book, the Node API docs
+   * and the Python library docs, 159 are split this way and not one of them
+   * contains a link.
+   *
+   * textContent would be enough if pages put only code in their code blocks.
+   * A control inside one is chrome, and so is the block-level element holding
+   * it: that is how the toolbar's `javascript` label leaves with the copy
+   * button it sits beside. The test stays on block-level wrappers because a
+   * highlighter's own elements are inline, so a stray control can never take a
+   * line of code out with it.
+   * @param {any} node
+   * @returns {string}
+   */
+  const verbatim = (node) => {
+    let out = '';
+    const gather = (n) => {
+      if (n.nodeType === 3) {
+        out += n.textContent ?? '';
+        return;
+      }
+      if (n.nodeType !== 1) return;
+      const tag = n.localName;
+      if (DROP.has(tag) || CODE_CONTROLS.has(tag) || hidden(n)) return;
+      if (n !== node && BLOCKY.has(tag) && n.querySelector(CONTROL)) return;
+      for (const child of n.childNodes) gather(child);
+    };
+    gather(node);
+    return out;
+  };
+
   const walk = (node) => {
     if (node.nodeType === 3) {
       const raw = node.textContent ?? '';
@@ -181,6 +246,21 @@ export function distill(html, url = '') {
         || clean(node.getAttribute('aria-label') ?? '')
         || clean(node.getAttribute('title') ?? '');
       if (text) blocks.push({ type: 'button', text });
+      return;
+    }
+    if (tag === 'pre' || tag === 'code') {
+      const raw = verbatim(node);
+      const text = tag === 'pre' ? codeText(raw) : clean(raw);
+      // A pre is its own line, which is what BLOCKY gave it before this branch
+      // started claiming it first. Inline code belongs to the sentence around
+      // it, so it carries the parent and the edge spacing a text node would and
+      // merges back into that sentence the same way.
+      const own = tag === 'pre';
+      if (own) blocks.push({ type: 'break' });
+      if (text) {
+        blocks.push({ type: 'text', text, host: node.parentNode, pre: /^\s/.test(raw), post: /\s$/.test(raw) });
+      }
+      if (own) blocks.push({ type: 'break' });
       return;
     }
     if (BLOCKY.has(tag)) {

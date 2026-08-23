@@ -1,0 +1,42 @@
+<!doctype html>
+<html><head><title>cp - Fixture CLI Command Reference</title></head>
+<body>
+<main>
+
+  <h1>cp</h1>
+
+  <!-- What a syntax highlighter does to a command: one element per token, so
+       the walk sees `s3`, `:`, `//`, `bucket` as separate fragments with
+       different parents. Every real highlighter emits this shape. -->
+  <p>Copy a file to the bucket:</p>
+  <pre class="highlight"><code><span class="nb">aws</span> <span class="n">s3</span> <span class="n">cp</span> <span class="n">test</span><span class="p">.</span><span class="n">txt</span> <span class="n">s3</span><span class="p">:</span><span class="p">//</span><span class="n">amzn</span><span class="p">-</span><span class="n">demo</span><span class="p">/</span> <span class="p">--</span><span class="n">recursive</span></code></pre>
+
+  <!-- A sample the page wrote across lines, with a shell continuation. Joining
+       these would hide the break; joining the next one would comment out the
+       call that follows the comment. -->
+  <pre><code>aws s3 cp test.txt s3://amzn-demo/ \
+    --expires 2014-10-01T20:30:00Z</code></pre>
+
+  <pre><code>const fs = require('node:fs');
+// read it back
+fs.readFileSync('out.txt');</code></pre>
+
+  <!-- Node's docs put a toolbar inside the block itself: a language label
+       sitting beside a copy button, plus a flavour toggle. None of it is part
+       of the sample. -->
+  <pre class="shiki"><input class="js-flavor-toggle" type="checkbox"><div class="code-toolbar"><span class="code-language">javascript</span><button class="copy-button">copy</button></div><code><span>import</span> <span>fs</span> <span>from</span> <span>'node:fs'</span><span>;</span></code></pre>
+
+  <!-- Indentation the whole block shares says nothing; indentation inside it
+       is the program. -->
+  <pre><code>    def load(path):
+        with open(path) as fh:
+            return json.load(fh)</code></pre>
+
+  <!-- Inline code belongs to the sentence it sits in, and it gets split into
+       tokens the same way. -->
+  <p>Pass the <code><span class="p">--</span><span class="n">recursive</span></code> flag to copy a directory.</p>
+
+  <p>A period (<code>.</code>) means the working directory.</p>
+
+</main>
+</body></html>

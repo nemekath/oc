@@ -19,6 +19,9 @@ const results = () => distill(api, API_URL);
 const rawApi = () => toMarkdown(api, API_URL).replace(/\\_/g, '_');
 const searchHTML = readFileSync(new URL('./pages/search.html', import.meta.url), 'utf8');
 const search = () => distill(searchHTML, 'https://fixture.test/html/?q=s3+cp+recursive');
+const docsHTML = readFileSync(new URL('./pages/docs.html', import.meta.url), 'utf8');
+const docs = () => distill(docsHTML, 'https://docs.fixture.test/s3/cp.html');
+const codeBlock = (match) => docs().blocks.find((b) => (b.text ?? '').includes(match))?.text ?? '';
 
 test('noise never reaches the output, compact or raw', () => {
   for (const out of [render(page(), { budget: 5000 }).text, toMarkdown(html), toHTML(html)]) {
@@ -426,4 +429,50 @@ test('a truncated block ends on a sentence, so what is shown can be trusted', ()
     { budget: 60 },
   ).text;
   assert.ok(unbroken.length > TEXT_CAP, `an early sentence end must not shrink the view:\n${unbroken}`);
+});
+
+test('a highlighted command comes out runnable', () => {
+  // Every token of this command is its own element on the page. Space-joining
+  // them gave `aws s3 cp s3 : // bucket / -- recursive`, which is not a command
+  // an agent can run, and the agent has no way to see that from the output.
+  assert.equal(codeBlock('aws s3 cp test.txt'), 'aws s3 cp test.txt s3://amzn-demo/ --recursive');
+});
+
+test('a code sample keeps its lines, so a comment cannot eat the rest', () => {
+  assert.equal(
+    codeBlock('readFileSync'),
+    "const fs = require('node:fs');\n// read it back\nfs.readFileSync('out.txt');",
+  );
+  // A shell continuation is only a continuation while the break is still there.
+  assert.equal(codeBlock('--expires'), 'aws s3 cp test.txt s3://amzn-demo/ \\\n    --expires 2014-10-01T20:30:00Z');
+});
+
+test('a code block loses the indentation it all shares and keeps the rest', () => {
+  assert.equal(codeBlock('def load'), 'def load(path):\n    with open(path) as fh:\n        return json.load(fh)');
+});
+
+test('a toolbar inside a code block is not part of the sample', () => {
+  const block = codeBlock("import fs from 'node:fs'");
+  assert.equal(block, "import fs from 'node:fs';");
+  const out = render(docs(), { budget: 5000 }).text;
+  assert.ok(!out.includes('javascript'), 'the language label leaked into the page');
+  // The controls go with it: a copy button is not something oc can press, and
+  // `do` on it would be a turn spent on nothing.
+  assert.equal(docs().blocks.filter((b) => b.type === 'button' || b.type === 'input').length, 0);
+});
+
+test('inline code joins the sentence it sits in', () => {
+  assert.ok(docs().blocks.some((b) => b.text === 'Pass the --recursive flag to copy a directory.'));
+  assert.ok(docs().blocks.some((b) => b.text === 'A period (.) means the working directory.'));
+});
+
+test('a truncated code block ends on a line, not mid-statement', () => {
+  const code = ['first();', 'second();', ...Array.from({ length: 20 }, (_, i) => `line${i}('${'x'.repeat(20)}');`)].join('\n');
+  const page = { url: 'https://fixture.test/c', title: 'c', blocks: [{ type: 'text', n: 1, text: code }] };
+  const shown = render(page, { budget: 10 }).text.split('\n');
+  const marker = shown.findIndex((l) => l.includes('... +'));
+  assert.ok(marker > 0, 'nothing was truncated');
+  // The kept part stops where a statement did, so every line shown is whole.
+  assert.ok(shown[marker].startsWith('line'), `cut mid-line: ${shown[marker]}`);
+  assert.ok(shown[marker].includes(');'), `cut mid-statement: ${shown[marker]}`);
 });
