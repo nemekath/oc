@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { fetchPage } = await import('../src/fetch.js');
+const { fetchPage, followRedirects } = await import('../src/fetch.js');
 
 const BLOCKED_MESSAGE = 'blocked: private or internal URL';
 
@@ -64,13 +64,44 @@ test('fetchPage blocks a hostname that merely resolves to a loopback address (DN
   await assert.rejects(() => fetchPage('localtest.me'), new RegExp(BLOCKED_MESSAGE));
 });
 
-test('fetchPage re-validates every redirect hop, not just the original URL', async () => {
-  // httpbin.org is a public host with no reason to be blocked itself; its
-  // /redirect-to endpoint 302s wherever it's told, which is exactly the
-  // shape of an SSRF that hides the real target behind a public-looking
-  // first hop.
-  const redirector = `https://httpbin.org/redirect-to?url=${encodeURIComponent('http://127.0.0.1/admin')}`;
-  await assert.rejects(() => fetchPage(redirector), new RegExp(BLOCKED_MESSAGE));
+// A response, as little of one as the redirect loop reads.
+const replies = (...hops) => {
+  const asked = [];
+  const get = (url) => {
+    asked.push(url);
+    const hop = hops[asked.length - 1] ?? { status: 200 };
+    return Promise.resolve({ status: hop.status, headers: new Map(hop.location ? [['location', hop.location]] : []) });
+  };
+  return { get, asked };
+};
+
+test('every redirect hop is re-validated, not just the original URL', async () => {
+  // An SSRF hides the real target behind a public-looking first hop, so the
+  // check has to run again on what the 302 names. This used to be proven
+  // against httpbin.org, which meant a third party's uptime could fail the
+  // release, and it never covered the impers transport's own copy of the loop.
+  const { get, asked } = replies({ status: 302, location: 'http://127.0.0.1/admin' });
+  await assert.rejects(() => followRedirects(get, 'https://public.example/start'), new RegExp(BLOCKED_MESSAGE));
+  // Blocked before the socket, not after: the private address is never asked for.
+  assert.deepEqual(asked, ['https://public.example/start']);
+});
+
+test('a hop to somewhere public is followed', async () => {
+  // The other half of the guarantee. A loop that rejected everything would
+  // pass the test above and break every redirect on the web.
+  const { get, asked } = replies(
+    { status: 301, location: 'https://elsewhere.example/moved' },
+    { status: 302, location: '/relative' },
+  );
+  const { res, url } = await followRedirects(get, 'https://public.example/start');
+  assert.equal(res.status, 200);
+  assert.equal(url, 'https://elsewhere.example/relative');
+  assert.equal(asked.length, 3);
+});
+
+test('a redirect loop gives up instead of spinning', async () => {
+  const get = () => Promise.resolve({ status: 302, headers: new Map([['location', 'https://public.example/again']]) });
+  await assert.rejects(() => followRedirects(get, 'https://public.example/start'), /too many redirects/);
 });
 
 test('the readable-type gate accepts text and refuses binary, on either transport', async () => {

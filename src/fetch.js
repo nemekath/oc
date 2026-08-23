@@ -160,11 +160,25 @@ export async function fetchPage(url) {
   return impers ? viaImpers(impers, target) : viaFetch(target);
 }
 
-async function followImpersRedirects(impers, startUrl, impersonate) {
-  let current = startUrl;
+/**
+ * Follow redirects one hop at a time, validating each destination before the
+ * next request goes out.
+ *
+ * Both transports share this loop. They used to carry one each, which made the
+ * check that matters something a change could fix in one place and leave broken
+ * in the other, and made the guarantee testable only through a third party
+ * willing to 302 wherever it was told. Taking the request as a callback is what
+ * lets the hop check be proven against a transport that never leaves the
+ * process.
+ * @param {(url: string) => Promise<any>} get - one request, redirects not followed
+ * @param {string} start
+ * @returns {Promise<{res: any, url: string}>} the first non-redirect response
+ */
+export async function followRedirects(get, start) {
+  let current = start;
   for (let i = 0; ; i++) {
-    if (i > MAX_REDIRECTS) throw new Error(`too many redirects for ${startUrl}`);
-    const res = await impers.get(current, { impersonate, allowRedirects: false });
+    if (i > MAX_REDIRECTS) throw new Error(`too many redirects for ${start}`);
+    const res = await get(current);
     const status = res.status ?? res.statusCode ?? 0;
     const location = res.headers.get('location');
     if (status >= 300 && status < 400 && location) {
@@ -172,19 +186,20 @@ async function followImpersRedirects(impers, startUrl, impersonate) {
       await assertSafeTarget(current);
       continue;
     }
-    return res;
+    return { res, url: current };
   }
 }
 
 async function viaImpers(impers, target) {
   // Some sites (Reddit) 403 the chrome fingerprint but accept firefox, so a
   // blocked first attempt gets one cheap retry with a second identity.
+  const asking = (impersonate) => (url) => impers.get(url, { impersonate, allowRedirects: false });
   let via = 'impers:chrome';
-  let res = await followImpersRedirects(impers, target, 'chrome');
+  let { res } = await followRedirects(asking('chrome'), target);
   let status = res.status ?? res.statusCode ?? 0;
   if (status >= 400) {
     via = 'impers:firefox';
-    res = await followImpersRedirects(impers, target, 'firefox');
+    ({ res } = await followRedirects(asking('firefox'), target));
     status = res.status ?? res.statusCode ?? 0;
   }
   if (status >= 400) throw new Error(`fetch failed: ${status} for ${target}`);
@@ -194,26 +209,14 @@ async function viaImpers(impers, target) {
 }
 
 async function viaFetch(target) {
-  let current = target;
-  let res;
-  for (let i = 0; ; i++) {
-    if (i > MAX_REDIRECTS) throw new Error(`too many redirects for ${target}`);
-    res = await fetch(current, {
-      redirect: 'manual',
-      headers: {
-        'user-agent': UA,
-        accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'accept-language': 'en-US,en;q=0.9',
-      },
-    });
-    const location = res.headers.get('location');
-    if (res.status >= 300 && res.status < 400 && location) {
-      current = new URL(location, current).toString();
-      await assertSafeTarget(current);
-      continue;
-    }
-    break;
-  }
+  const { res, url: current } = await followRedirects((url) => fetch(url, {
+    redirect: 'manual',
+    headers: {
+      'user-agent': UA,
+      accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'accept-language': 'en-US,en;q=0.9',
+    },
+  }), target);
   if (!res.ok) {
     throw new Error(`fetch failed: ${res.status} ${res.statusText} for ${current}`);
   }
