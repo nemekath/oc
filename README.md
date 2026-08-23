@@ -27,7 +27,7 @@ If you are an LLM reading this repository, [llms.txt](llms.txt) is the short ver
 npm install -g @only-cli/oc
 ```
 
-Requires Node 20+. Requests impersonate Chrome via [impers](https://github.com/lexiforest/impers); falls back to native fetch if impers is unavailable.
+Requires Node 20+. Requests impersonate Chrome via [impers](https://github.com/lexiforest/impers); falls back to native fetch if impers is unavailable. Outbound fetches honor `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` when set.
 
 ### Agent skill
 
