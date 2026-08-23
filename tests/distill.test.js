@@ -322,6 +322,51 @@ test('json shapes other than a wrapped array still render', () => {
   assert.ok(single.blocks.some((b) => b.text?.includes('score: 3')), 'a single resource lost its fields');
 });
 
+test('a resource with its own name is the subject, not the array hanging off it', () => {
+  // The npm registry shape: a named package carrying a short array of
+  // maintainers. Picking the longest array made the maintainers the subject
+  // and pushed the package into the metadata line.
+  const pkg = JSON.stringify({
+    name: 'turnstile', license: 'MIT', description: 'does a thing',
+    maintainers: [{ name: 'ada', email: 'ada@example.test' }, { name: 'grace', email: 'grace@example.test' }],
+  });
+  const p = distill(pkg, 'https://registry.example.test/turnstile');
+  assert.ok(p.title.includes('(1 item)'), `the package was not the subject:\n${p.title}`);
+  assert.ok(p.blocks.some((b) => b.text === 'turnstile'), 'the resource lost its name');
+  assert.ok(!p.blocks.some((b) => b.text?.startsWith('response:')), 'the resource was demoted to metadata');
+  // A conventional container key still wins over the root's own name, so a
+  // named collection is still read as the collection it is.
+  const coll = distill(JSON.stringify({ name: 'a collection', items: [{ title: 'one' }, { title: 'two' }] }), 'https://x.test/c.json');
+  assert.ok(coll.title.includes('(2 items)'), `a named collection lost its items:\n${coll.title}`);
+});
+
+test('one long field at the root cannot spend the whole page budget', () => {
+  const long = 'sentence about the package. '.repeat(400);
+  const body = JSON.stringify({ readme: long, total: 2, items: [{ title: 'one' }, { title: 'two' }] });
+  const p = distill(body, 'https://x.test/list.json');
+  const meta = p.blocks.find((b) => b.text?.startsWith('response:'));
+  assert.ok(meta, 'the request metadata went missing');
+  assert.ok(meta.text.includes('total=2'), 'a short metadata field was lost with the long one');
+  assert.ok(!meta.text.includes(long.slice(0, 200)), 'a long field stayed on the summary line');
+  assert.ok(meta.text.length < TEXT_CAP * 2, `the summary line is not a line:\n${meta.text.slice(0, 300)}`);
+  // Off the line, not out of the page: it is its own block, and raw has it.
+  assert.ok(p.blocks.some((b) => b.text?.startsWith('readme:')), 'the long field vanished instead of moving');
+  assert.ok(toMarkdown(body, 'https://x.test/list.json').includes('sentence about the package'), 'raw lost the long field');
+});
+
+test('a body too long for the compact view becomes a line, not a dozen blocks', () => {
+  const short = '<p>A <em>short</em> body with <a href="https://example.test/x">a link</a>.</p>';
+  const huge = `<p>${'A paragraph that goes on. '.repeat(400)}</p><pre><code>code()</code></pre>`;
+  const withShort = distill(JSON.stringify({ items: [{ title: 'q', body: short }] }), 'https://x.test/a.json');
+  assert.ok(withShort.blocks.some((b) => b.type === 'link' && b.text === 'a link'), 'a body that fits lost its links');
+  const withHuge = distill(JSON.stringify({ items: [{ title: 'q', body: huge }] }), 'https://x.test/b.json');
+  const line = withHuge.blocks.find((b) => b.text?.startsWith('body:'));
+  assert.ok(line, 'an oversized body left nothing behind');
+  assert.ok(!line.text.includes('<p>'), 'markup reached the line unstripped');
+  // raw is still the escape hatch, and still reads the markup as markup.
+  assert.ok(toMarkdown(JSON.stringify({ items: [{ title: 'q', body: huge }] }), 'https://x.test/b.json').includes('code()'), 'raw lost the oversized body');
+});
+
 test('only json is read as json', () => {
   assert.equal(jsonToHTML(html), null, 'an html page was parsed as json');
   assert.equal(jsonToHTML(feed), null, 'a feed was parsed as json');

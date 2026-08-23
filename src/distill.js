@@ -513,6 +513,15 @@ const TITLE_KEYS = [
   'full_name', 'summary', 'question', 'message',
 ];
 
+// Keys an API is likely to put its list of results under. A response using one
+// of these is a list whatever else it carries, so the name settles it before
+// shape does: a sideloaded `included` array can outnumber the `items` the
+// request was for without being what the request was for.
+const CONTAINER_KEYS = [
+  'items', 'data', 'results', 'hits', 'records', 'rows', 'entries',
+  'nodes', 'edges', 'docs', 'list', 'children', 'values',
+];
+
 // Keys holding the item's own page. A URL under any other name is still found,
 // by looking at values rather than names, but these win when several qualify.
 const LINK_KEYS = ['link', 'url', 'html_url', 'web_url', 'permalink', 'href'];
@@ -539,6 +548,14 @@ const NESTED_PENALTY = 0.25;
 
 // How many names the footer lists when it says which fields it left out.
 const DROPPED_LISTED = 5;
+
+// Characters of markup a field may carry before the compact view stops
+// treating it as a document and starts treating it as somewhere to go. A
+// question body arrives well under this and is worth rendering in place, links
+// and code and all. A package readme arrives at four figures and distils into
+// more blocks than the resource it is attached to has fields, which buries the
+// resource the response was fetched for. `oc raw` renders either one in full.
+const BODY_CAP = 4000;
 
 // Seconds and milliseconds since the epoch, bounded either side so an ordinary
 // count (a score, a byte size) is never mistaken for a date.
@@ -572,6 +589,10 @@ const decodeEntities = (s) =>
 const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isURL = (v) => typeof v === 'string' && /^https?:\/\/\S+$/.test(v);
 const looksHTML = (v) => typeof v === 'string' && /<\/?(p|div|pre|code|br|ul|ol|li|h[1-6]|blockquote|table|img|a|em|strong)\b[^>]*>/i.test(v);
+// Markup as one line of prose, for a body the compact view is pointing at
+// rather than rendering. The distiller is what reads markup properly; this
+// only has to make a line an agent can tell one body from another by.
+const stripTags = (v) => clean(decodeEntities(String(v).replace(/<[^>]*>/g, ' ')));
 
 /**
  * One level of flattening, so `owner: {display_name}` becomes an
@@ -662,32 +683,40 @@ function chooseFields(rows, skip) {
 }
 
 /**
- * Pick the array the response is actually about: the root when it is one,
- * otherwise the longest array of objects at the top level, which is where
- * `items`, `data`, `results`, and `hits` all live. Everything beside it is
- * metadata about the request rather than content.
+ * Pick what the response is actually about: the root when it is an array or a
+ * single resource, otherwise the array of objects at the top level that holds
+ * the results. Everything beside it is metadata about the request rather than
+ * content.
  * @param {any} data
  * @returns {{items: any[], meta: Record<string, any>}}
  */
 function mainArray(data) {
   if (Array.isArray(data)) return { items: data, meta: {} };
-  let key = '';
-  /** @type {any[] | null} */
-  let items = null;
+  /** @type {Map<string, any[]>} */
+  const arrays = new Map();
   for (const [k, v] of Object.entries(data)) {
     if (!Array.isArray(v) || !v.length) continue;
     if (!v.some(isPlain)) continue;
-    if (!items || v.length > items.length) {
-      items = v;
-      key = k;
+    arrays.set(k, v);
+  }
+  let key = CONTAINER_KEYS.find((k) => arrays.has(k)) ?? '';
+  // A root carrying its own name is the resource, and an array hanging off it
+  // describes that resource rather than being the subject in its place. Taking
+  // the longest array regardless titled the npm registry's package endpoint
+  // after its two maintainers and demoted the package to the metadata line,
+  // where a 9KB readme then cost more than the rest of the page put together.
+  const named = TITLE_KEYS.some((k) => typeof data[k] === 'string' && data[k].trim() !== '');
+  if (!key && !named) {
+    for (const [k, v] of arrays) {
+      if (!key || v.length > (arrays.get(key)?.length ?? 0)) key = k;
     }
   }
-  // A response with no array is a single resource, which renders as one item
-  // rather than as a special case.
-  if (!items) return { items: [data], meta: {} };
+  // A response with no results array of its own is a single resource, which
+  // renders as one item rather than as a special case.
+  if (!key) return { items: [data], meta: {} };
   const meta = { ...data };
   delete meta[key];
-  return { items, meta };
+  return { items: arrays.get(key) ?? [data], meta };
 }
 
 /**
@@ -784,9 +813,16 @@ export function jsonToHTML(text, url = '', { full = false } = {}) {
       if (kept && !kept.has(key) && !looksHTML(value)) continue;
       // A field carrying HTML is a page in itself: `filter=withbody` on the
       // Stack Exchange API puts a whole question in one. It goes through the
-      // distiller like any other markup instead of into a cell.
+      // distiller like any other markup instead of into a cell, unless it is
+      // longer than the compact view can afford, in which case it becomes one
+      // numbered line rather than a dozen blocks that bury the item it hangs
+      // off. `oc read <n>` opens it at a budget that fits it, `oc raw` always.
       if (looksHTML(value)) {
-        bodies.push(String(value));
+        if (full || String(value).length <= BODY_CAP) {
+          bodies.push(String(value));
+          continue;
+        }
+        long.push(`<p>${escHTML(`${key}: ${stripTags(value)}`)}</p>`);
         continue;
       }
       const rendered = row.get(key);
@@ -824,12 +860,21 @@ export function jsonToHTML(text, url = '', { full = false } = {}) {
   }
 
   const metaBits = [];
+  const metaLong = [];
   for (const [key, value] of Object.entries(meta)) {
     if (value === null || typeof value === 'object') continue;
     const rendered = renderValue(key, value);
-    if (rendered) metaBits.push(`${key}=${rendered}`);
+    if (!rendered) continue;
+    // A summary line has to stay a line. One long scalar at the root, a
+    // package readme or an endpoint description, would otherwise spend the
+    // whole page budget here, so it becomes a block of its own instead. The
+    // block is numbered, so `oc read <n>` opens it when it fits that budget
+    // and `oc raw` has it whatever its size.
+    if (rendered.length > TEXT_CAP) metaLong.push(`<p>${escHTML(`${key}: ${rendered}`)}</p>`);
+    else metaBits.push(`${key}=${rendered}`);
   }
   if (metaBits.length) parts.push(`<p>response: ${escHTML(metaBits.join(', '))}</p>`);
+  parts.push(...metaLong);
 
   const count = `${items.length} ${items.length === 1 ? 'item' : 'items'}`;
   return `<html><head><title>${escHTML(jsonTitle(url, count))}</title></head><body>\n${parts.join('\n')}\n</body></html>`;
