@@ -35,6 +35,29 @@ const PROXY_TIMEOUT_MS = 300_000;
 // pages of mojibake an agent then pays for, so it is refused by name instead.
 const READABLE_TYPE = /^\s*(?:text\/|application\/(?:json|xml|javascript|x-ndjson|[\w.+-]*\+(?:json|xml)))/i;
 
+// The whole decoded body is buffered before the distiller sees it, so an
+// unbounded response is an unbounded allocation, and a URL is often the
+// page's to name, not the caller's. The cap is generous because oc fetches
+// some large corpora on purpose (the Node.js docs reference is 8.5MB
+// decoded); three times that and a response is not a page anyone reads.
+// Content-Length rejects a known-large response before its bytes arrive, but
+// the header is optional and untrusted, so every transport also counts what
+// actually lands, after decoding, which is what stops a decompression bomb.
+export const MAX_BODY = 25 * 1024 * 1024;
+
+/**
+ * Refuse a body larger than oc will buffer. Called on the Content-Length
+ * header first and again on the bytes as they arrive, since only the second
+ * count is trustworthy.
+ * @param {number} size - bytes seen so far, or claimed by the header
+ * @param {string} url
+ */
+export function assertBodySize(size, url) {
+  if (size > MAX_BODY) {
+    throw new Error(`response body over ${MAX_BODY / 1048576}MB for ${url}, more than oc will read`);
+  }
+}
+
 /**
  * Refuse a response oc cannot read as text. Both transports call this: the
  * gate has to live on whichever client got the page, or the same URL renders
@@ -310,7 +333,18 @@ function wrapNodeResponse(res, url) {
   };
   const text = () => new Promise((resolve, reject) => {
     const chunks = [];
-    res.on('data', (c) => chunks.push(c));
+    let size = 0;
+    res.on('data', (c) => {
+      size += c.length;
+      try {
+        assertBodySize(size, url);
+      } catch (err) {
+        // destroy surfaces the refusal through 'error', and stops the read.
+        res.destroy(err);
+        return;
+      }
+      chunks.push(c);
+    });
     res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     res.on('error', reject);
   });
@@ -507,7 +541,12 @@ async function viaImpers(impers, target) {
   }
   if (status >= 400) throw new Error(`fetch failed: ${status} for ${target}`);
   assertReadableType(res.headers.get('content-type'));
+  assertBodySize(Number(res.headers.get('content-length')) || 0, target);
+  // impers buffers inside its own binding, so the size of what it already
+  // holds is all there is to check; the bound still stops an oversized body
+  // from travelling any further.
   const html = typeof res.text === 'function' ? await res.text() : String(res.text ?? res.body ?? '');
+  assertBodySize(html.length, target);
   return { url: res.url ?? target, html, status, via };
 }
 
@@ -522,5 +561,27 @@ async function viaFetch(target) {
     throw new Error(`fetch failed: ${res.status} ${res.statusText} for ${current}`);
   }
   assertReadableType(res.headers.get('content-type'));
-  return { url: res.url || current, html: await res.text(), status: res.status, via: 'fetch' };
+  assertBodySize(Number(res.headers.get('content-length')) || 0, current);
+  return { url: res.url || current, html: await readBody(res, current), status: res.status, via: 'fetch' };
+}
+
+/**
+ * The decoded body as text, counted as it arrives so crossing the cap aborts
+ * the transfer instead of finishing it. Throwing mid-iteration cancels the
+ * stream. A proxy response has no web stream to iterate; its text() counts
+ * inside wrapNodeResponse instead.
+ * @param {any} res
+ * @param {string} url
+ * @returns {Promise<string>}
+ */
+export async function readBody(res, url) {
+  if (!res.body?.getReader) return res.text();
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of res.body) {
+    size += chunk.byteLength;
+    assertBodySize(size, url);
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
