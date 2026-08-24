@@ -72,6 +72,8 @@ Flags: `--budget <tokens>` (default 500), `--json`, `--html` (raw as cleaned HTM
 
 `oc open` remembers the page it rendered in a JSON file per session under `~/.only-cli` (override with `OC_HOME`), so `oc do 3` follows `[3]` without the agent ever handling a URL. A result title on a search page is a link, so `oc do` on it opens the result rather than repeating the title. Pages longer than the budget say what they left out; `oc find`, `oc read <n>`, and `oc next` read the rest without refetching the page, and a `find` with a single match prints that region instead of the number to read it with. The budget is a target rather than a hard cap: a page that would only run a little long is printed whole rather than cut, since one extra tool call costs far more than the tokens it would have saved.
 
+When a page comes back with no readable text (JavaScript-only, a consent wall, a bot challenge), `oc` says so in one line on stderr and exits 2 instead of printing a title and calling it a render. That is a different exit code from every other failure, and `--json` carries the same verdict as an `empty` field, so an agent can tell "this page has nothing on it" from "oc could not read this page" and pay for a browser only when it is worth it.
+
 ## Supported websites
 
 Works on any mostly-static site with no per-site setup: news sites, blogs, documentation, forums, search engines. A JSON API is a page here too: `oc open` on an endpoint that answers with JSON renders one numbered item per record, keeps the fields that actually differ between items, and says once what every item shares. On top of that, `clis/` ships tuned shortcuts for:

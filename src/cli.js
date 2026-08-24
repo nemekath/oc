@@ -2,7 +2,7 @@
 import { parseArgs } from 'node:util';
 import { fetchPage } from './fetch.js';
 import { distill, toMarkdown, toHTML } from './distill.js';
-import { render, estimateTokens } from './render.js';
+import { render, estimateTokens, contentTokens, contentFailure, MIN_CONTENT } from './render.js';
 import * as act from './act.js';
 import { DEFAULT_SESSION, loadSession, saveSession, sessionFromPage } from './session.js';
 
@@ -35,6 +35,10 @@ flags:
                       globally. Off by default because metrics cost tokens too.
   --session <name>    keep separate page state under a name (default: default)
 
+A page that comes back with no readable text (JavaScript-only, a consent wall,
+a bot challenge) says so in one line on stderr and exits 2, so a caller can
+tell an empty page from a page oc could not read and fall back to a browser.
+
 'oc open' remembers the page it printed, so 'oc do 3' follows link [3] without
 you ever handling its URL, and 'oc next' or 'oc read 12' picks up what the
 budget left behind without fetching it again. 'oc do' on a search result title
@@ -59,6 +63,17 @@ const remember = (page, name, cursor) => {
 // What browsing costs without this tool is the raw page HTML in context.
 const savings = (out, raw) =>
   `~${out} tokens vs ~${raw} for the page HTML (${Math.max(0, 100 - Math.round((out / Math.max(raw, 1)) * 100))}% saved)`;
+
+// Nonzero, and distinct from the exit 1 that every other failure uses, so a
+// caller can branch on 'oc could not read this' without parsing prose.
+const NO_CONTENT_EXIT = 2;
+
+const noContent = (url, detail, hint = "; 'oc raw' has the page's markdown if there is any, otherwise this one needs a browser") => {
+  console.error(`oc: no readable content at ${url} (${detail}), so it is JavaScript-only, gated, or challenged${hint}`);
+  // Not process.exit: stdout may still be draining, and whatever did render is
+  // worth printing even when the render failed.
+  process.exitCode = NO_CONTENT_EXIT;
+};
 
 async function main() {
   const { values, positionals } = parseArgs({
@@ -123,27 +138,49 @@ async function main() {
         return `HTTP ${status} via ${via}, fetch ${Math.round(fetchMs)}ms, process ${Math.round(processMs)}ms, `
           + `${Math.round(html.length / 1024)}KB transferred, ${Math.round(rss / 1048576)}MB memory`;
       };
+      const htmlTokens = estimateTokens(html);
       if (values.json) {
         const page = distill(html, finalUrl);
         remember(page, sessionName);
-        console.log(JSON.stringify(page));
+        const failure = contentFailure(contentTokens(page), htmlTokens);
+        // Always present, so a caller can branch on the field rather than on
+        // whether a field it was hoping for turned up.
+        console.log(JSON.stringify({ ...page, empty: failure != null }));
         if (verbose) console.error(resources());
+        if (failure) noContent(finalUrl, failure);
         return;
       }
-      const htmlTokens = estimateTokens(html);
       if (command === 'raw') {
         const out = values.html ? toHTML(html, finalUrl) : toMarkdown(html, finalUrl);
+        const outTokens = estimateTokens(out);
         console.log(out);
-        if (verbose) console.error(`${savings(estimateTokens(out), htmlTokens)}; ${resources()}`);
+        if (verbose) {
+          const cost = outTokens < MIN_CONTENT
+            ? `nothing distilled out of ~${htmlTokens} tokens of page HTML`
+            : savings(outTokens, htmlTokens);
+          console.error(`${cost}; ${resources()}`);
+        }
+        // Only the blank case here. `raw` is the fallback the compact view's
+        // failure line names, so it must not fail on the same pages: a page
+        // whose only text is its menu still has markup, and printing it is the
+        // whole point of `raw`.
+        if (outTokens < MIN_CONTENT) noContent(finalUrl, `~${outTokens} tokens of markdown`, '');
         return;
       }
       const page = distill(html, finalUrl);
+      const failure = contentFailure(contentTokens(page), htmlTokens);
       const { text, stats } = render(page, { budget });
       remember(page, sessionName, stats.next);
       console.log(text);
       if (verbose) {
-        console.error(`~${stats.tokens} tokens, ${stats.rendered}/${stats.blocks} blocks rendered, ${savings(stats.tokens, htmlTokens)}; ${resources()}`);
+        // Reporting '100% saved' of a render that extracted nothing is the one
+        // place this line lies, and it lies in the tool's own favour.
+        const cost = failure
+          ? `no content distilled out of ~${htmlTokens} tokens of page HTML`
+          : savings(stats.tokens, htmlTokens);
+        console.error(`~${stats.tokens} tokens, ${stats.rendered}/${stats.blocks} blocks rendered, ${cost}; ${resources()}`);
       }
+      if (failure) noContent(finalUrl, failure);
       return;
     }
     case 'read': return console.log(act.read(Number(args[0]), { session: sessionName, budget: asked || 2000 }));
