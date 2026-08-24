@@ -1,0 +1,42 @@
+# Changelog
+
+Notable changes per release. Releases before 0.4.0 are listed at
+[github.com/only-cli/oc/releases](https://github.com/only-cli/oc/releases).
+
+## 0.4.0
+
+### Added
+
+- Site shortcuts are dispatched, not just documented. `oc <site> <verb> [args]`
+  resolves to a URL and then takes the same path `oc open` does, so it costs the
+  same and reads the same. A site is named by short name, bare name, or domain
+  (`oc hn`, `oc ycombinator`, `oc news.ycombinator.com`), the last argument
+  absorbs every word after it so a query needs no quoting, and `oc sites` lists
+  every site with its verbs. Shortcuts come from `clis/*.json`, so adding a site
+  is a JSON file and no code. (#19)
+- Wikipedia shortcuts: `oc wiki article <title>`, `oc wiki search <query>`, and
+  `oc wiki lang <code> <title>` for the other language editions. Articles are
+  read through `action=render`, which serves the article body without the site
+  chrome, navigation, and edit controls that surround `/wiki/<Title>`. (#22)
+- Outbound fetches honor `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`, including
+  the lowercase forms, so oc works in a sandbox whose only route out is a proxy.
+  HTTP and HTTPS proxies are supported and proxy credentials in the URL are
+  sent as `Proxy-Authorization`. (#17)
+- The MIT `LICENSE` file that the badge and `package.json` were already
+  claiming. (#18)
+
+### Changed
+
+- A page that distills to no readable text now fails loud instead of printing an
+  empty render and exiting 0. It writes one line to stderr and exits 2, which is
+  distinct from the exit 1 every other failure uses, so a caller can tell "this
+  page is empty" from "oc could not read this page" and fall back to a browser
+  only when that is worth doing. `--json` carries the same verdict as an `empty`
+  field. (#20)
+- The SSRF guard runs before a proxy is chosen, so a proxied request cannot be
+  used to reach an address the direct path would have refused. (#17)
+
+### Fixed
+
+- GitHub and Reddit shortcut URL templates corrected so their verbs reach the
+  pages they name. (#19)
