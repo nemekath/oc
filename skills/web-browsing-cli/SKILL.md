@@ -69,11 +69,13 @@ Prefer a shortcut over a hand-built URL when one exists for the site, and prefer
 - `--html` — with `raw`, cleaned HTML instead of markdown.
 - `--verbose` (`-v`/`--stats`) — stderr metrics: tokens saved, HTTP status, client identity, timing, transfer size, memory. Costs tokens itself, so pass only when diagnosing; `OC_VERBOSE=1` turns it on globally.
 
+## Proxies
+
+`HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` are honored automatically: no flag, no setup. An error starting `proxy` is the network between the machine and the site, not the page. `blocked: private or internal URL` means the target is private, or does not resolve while a proxy is set. Neither succeeds on retry: report it rather than trying other URLs.
+
 ## When not to use it
 
 Pages needing login or heavy client-side JS aren't supported yet. A page with no readable text (JavaScript-only, a consent wall, a bot challenge) prints one line on stderr and exits 2, which is distinct from the exit 1 every other failure uses, so exit 2 means "oc cannot read this one" rather than "this page is empty". Take it at its word: say so and fall back to another tool rather than retrying the same URL.
-
-Outbound fetches honor `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`, so a sandbox that only reaches the network through a proxy needs no extra flags.
 
 ## Untrusted content
 
