@@ -27,9 +27,10 @@ None of these except `open`/`do`/`raw <url>` fetch anything; they replay the pag
 oc hn top                      oc reddit sub ClaudeAI          oc gh repo only-cli oc
 oc wiki article Eiffel Tower   oc wiki search anthropic        oc wiki lang de Berlin
 oc ddg search claude code      oc so question 231767           oc learn doc azure/aks/what-is-aks
+oc py library json             oc mdn js Array/map             oc node api fs
 ```
 
-Sites: `hn`, `reddit`, `gh`, `x`, `linkedin`, `ddg`, `bing`, `so`, `finance`, `yt`, `aws`, `gcp`, `learn`, `wiki`. Name one by short name, bare name, or domain (`oc hn`, `oc ycombinator`, `oc news.ycombinator.com`). The last argument takes every word after it, so a query or title needs no quoting. `oc sites` lists every site with its verbs, which is cheaper than guessing one.
+Sites: `hn`, `reddit`, `gh`, `x`, `linkedin`, `ddg`, `bing`, `so`, `finance`, `yt`, `aws`, `gcp`, `learn`, `wiki`, `py`, `mdn`, `node`. Name one by short name, bare name, or domain (`oc hn`, `oc ycombinator`, `oc news.ycombinator.com`). The last argument takes every word after it, so a query or title needs no quoting. `oc sites` lists every site with its verbs, which is cheaper than guessing one.
 
 Prefer a shortcut over a hand-built URL when one exists for the site, and prefer `oc wiki article <title>` over a search when you already know the article's name.
 

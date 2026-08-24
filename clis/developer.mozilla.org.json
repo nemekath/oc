@@ -1,0 +1,9 @@
+{
+  "domain": "developer.mozilla.org",
+  "commands": {
+    "js": { "open": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/{page}", "args": ["page"] },
+    "css": { "open": "https://developer.mozilla.org/en-US/docs/Web/CSS/{page}", "args": ["page"] },
+    "doc": { "open": "https://developer.mozilla.org/en-US/docs/{path}", "args": ["path"] },
+    "search": { "open": "https://html.duckduckgo.com/html/?q=site%3Adeveloper.mozilla.org+{query}", "args": ["query"] }
+  }
+}

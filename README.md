@@ -125,10 +125,13 @@ Works on any mostly-static site with no per-site setup: news sites, blogs, docum
 | AWS docs | `oc aws` (search via DuckDuckGo) | `guide <service> <page>`, `page <service> <guide> <page>`, `cli <command>`, `search <query>` |
 | Google Cloud docs | `oc gcp` (via docs.cloud.google.com, search via DuckDuckGo) | `docs <product>`, `page <product> <page>`, `gcloud <command>`, `search <query>` |
 | Microsoft Learn | `oc learn` (search via its RSS API) | `azure <page>`, `doc <path>`, `cli <command>`, `search <query>` |
+| Python docs | `oc py` (search via DuckDuckGo) | `library <module>`, `doc <path>`, `search <query>` |
+| MDN | `oc mdn` (search via DuckDuckGo) | `js <page>`, `css <page>`, `doc <path>`, `search <query>` |
+| Node.js docs | `oc node` (search via DuckDuckGo) | `api <module>`, `search <query>` |
 
 A shortcut only ever resolves to a URL and then takes the same path `oc open` does, so it changes nothing about what a page costs or how it reads. The last argument takes every word after it, so `oc ddg search claude code cli` and `oc aws search s3 lifecycle rules` need no quoting, and a path argument keeps its slashes, so `oc learn doc azure/aks/what-is-aks` reaches that page.
 
-A few of these (X, Stack Overflow, YouTube, Microsoft Learn search) read pages that look login-gated or JS-only from the outside, by finding the server-rendered HTML, feed, inline data, or public API the page already ships without a login. Stack Overflow search goes through the Stack Exchange API, and each result prints its `question_id`: read one with the `question <id>` feed rather than following its link, since the question page itself answers a bot challenge instead of the question. AWS and Google Cloud render docs search purely client-side with no feed, so their `search` goes through DuckDuckGo with a baked-in `site:` filter instead. Not supported yet: pages that only render with JavaScript, sites behind logins, and sites with hard bot challenges that expose no feed.
+A few of these (X, Stack Overflow, YouTube, Microsoft Learn search) read pages that look login-gated or JS-only from the outside, by finding the server-rendered HTML, feed, inline data, or public API the page already ships without a login. Stack Overflow search goes through the Stack Exchange API, and each result prints its `question_id`: read one with the `question <id>` feed rather than following its link, since the question page itself answers a bot challenge instead of the question. AWS, Google Cloud, Python, MDN, and Node.js render docs search client-side or ship none at all, so their `search` goes through DuckDuckGo with a baked-in `site:` filter instead. Not supported yet: pages that only render with JavaScript, sites behind logins, and sites with hard bot challenges that expose no feed.
 
 Want a website on that list? Open a pull request, or an issue naming the site; see [CONTRIBUTING.md](CONTRIBUTING.md).
 

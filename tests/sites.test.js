@@ -67,3 +67,24 @@ test('oc sites lists every site once, with a verb line an agent can copy', () =>
   }
   assert.match(text, /^oc hn <verb> \(ycombinator, news\.ycombinator\.com\): top \| new \| item <id>/m);
 });
+
+test('language docs shortcuts resolve, and a doc path keeps its slashes', () => {
+  assert.equal(
+    resolveSite('py', ['library', 'json']).url,
+    'https://docs.python.org/3/library/json.html');
+  assert.equal(
+    resolveSite('python', ['doc', 'reference/datamodel']).url,
+    'https://docs.python.org/3/reference/datamodel.html');
+  assert.equal(
+    resolveSite('mdn', ['js', 'Array/map']).url,
+    'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/map');
+  assert.equal(
+    resolveSite('mozilla', ['css', 'grid-template-columns']).url,
+    'https://developer.mozilla.org/en-US/docs/Web/CSS/grid-template-columns');
+  assert.equal(
+    resolveSite('node', ['api', 'fs']).url,
+    'https://nodejs.org/api/fs.html');
+  assert.equal(
+    resolveSite('nodejs.org', ['search', 'readFile options']).url,
+    'https://html.duckduckgo.com/html/?q=site%3Anodejs.org+readFile%20options');
+});

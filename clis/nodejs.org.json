@@ -1,0 +1,7 @@
+{
+  "domain": "nodejs.org",
+  "commands": {
+    "api": { "open": "https://nodejs.org/api/{module}.html", "args": ["module"] },
+    "search": { "open": "https://html.duckduckgo.com/html/?q=site%3Anodejs.org+{query}", "args": ["query"] }
+  }
+}
