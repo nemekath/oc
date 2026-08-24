@@ -92,6 +92,7 @@ Works on any mostly-static site with no per-site setup: news sites, blogs, docum
 | Stack Overflow | `oc so` (via Atom feeds and the Stack Exchange API) | `search <query>`, `question <id>`, `tag <name>`, `user <id>`, `recent` |
 | Yahoo Finance | `oc yahoo` | `quote <symbol>`, `news <symbol>`, `history <symbol>`, `lookup <query>`, `markets`, `gainers`, `losers`, `trending` |
 | YouTube | `oc yt` | `video <id>`, `channel <name>` |
+| Wikipedia | `oc wiki` (via `action=render`) | `article <title>`, `search <query>`, `lang <code> <title>` |
 | AWS docs | `oc aws` (search via DuckDuckGo) | `guide <service> <page>`, `page <service> <guide> <page>`, `cli <command>`, `search <query>` |
 | Google Cloud docs | `oc gcp` (via docs.cloud.google.com, search via DuckDuckGo) | `docs <product>`, `page <product> <page>`, `gcloud <command>`, `search <query>` |
 | Microsoft Learn | `oc learn` (search via its RSS API) | `azure <page>`, `doc <path>`, `cli <command>`, `search <query>` |
