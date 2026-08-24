@@ -1,7 +1,8 @@
 /**
  * Sessions are plain JSON files on disk, one per name: the current URL, the
  * distilled blocks of the page it holds, how far the last render got through
- * them, and a short history. No daemon, no background process, no cookies yet.
+ * them, and a short history. No daemon, no background process; cookies live in
+ * a separate sidecar file (see cookies.js).
  *
  * The file exists so `oc do <n>` can follow a link the compact view never
  * printed the URL of. Hiding URLs is what makes `oc open` cheap; this is what
@@ -11,18 +12,35 @@
 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 
 export const DEFAULT_SESSION = 'default';
 
 // OC_HOME relocates the whole state directory, for sandboxes, CI, and tests.
 export const sessionDir = () => join(process.env.OC_HOME ?? join(homedir(), '.only-cli'), 'sessions');
 
+// A session name is interpolated straight into a filename, and the cookie
+// sidecar it names now holds real credentials, so a name that is a path
+// (absolute, or with a separator or '..') could write or delete a file outside
+// the store. Names are user-facing labels, so this charset loses nothing real.
+const SAFE_NAME = /^[A-Za-z0-9._-]+$/;
+
+/**
+ * @param {string} name
+ * @returns {string} the same name, once it is known to be a safe filename
+ */
+export function assertSafeName(name) {
+  if (typeof name !== 'string' || name === '.' || name === '..' || !SAFE_NAME.test(name)) {
+    throw new Error(`invalid session name '${name}', use letters, numbers, '.', '-', or '_'`);
+  }
+  return name;
+}
+
 /**
  * @param {string} name
  * @returns {string}
  */
-export const sessionPath = (name) => join(sessionDir(), `${name}.json`);
+export const sessionPath = (name) => join(sessionDir(), `${assertSafeName(name)}.json`);
 
 // Search engines and link aggregators wrap outbound links in a tracking
 // redirector whose landing page is a script, not content, so following one
@@ -136,7 +154,13 @@ export function handleNumbers(state) {
  */
 export function saveSession(name, state) {
   mkdirSync(sessionDir(), { recursive: true });
-  writeFileSync(sessionPath(name), JSON.stringify(state));
+  // A snapshot of an authenticated page holds that page's text, so it gets the
+  // same owner-only mode as the cookie sidecar. writeFileSync only sets the
+  // mode on create, so a snapshot left world-readable by an older version is
+  // tightened explicitly on the next save.
+  const path = sessionPath(name);
+  writeFileSync(path, JSON.stringify(state), { mode: 0o600 });
+  chmodSync(path, 0o600);
 }
 
 /**

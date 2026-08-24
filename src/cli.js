@@ -5,7 +5,18 @@ import { distill, toMarkdown, toHTML } from './distill.js';
 import { render, estimateTokens, contentTokens, contentFailure, MIN_CONTENT } from './render.js';
 import { resolveSite, listSites } from './sites.js';
 import * as act from './act.js';
-import { DEFAULT_SESSION, loadSession, saveSession, sessionFromPage } from './session.js';
+import { DEFAULT_SESSION, assertSafeName, loadSession, saveSession, sessionFromPage } from './session.js';
+import { authFailure, sessionExpiredMessage } from './auth.js';
+import {
+  loadCookieJar,
+  saveCookieJar,
+  clearCookieJar,
+  createJarHandle,
+  loginCookieJar,
+  parseExpires,
+  DEFAULT_EXPIRES_MS,
+  JAR_EXPIRED,
+} from './cookies.js';
 
 const HELP = `only-cli: the web as a compact terminal, built for AI agents.
 
@@ -23,6 +34,8 @@ usage: oc <command> [args] [flags]
   fill <n> <text>     type into a numbered input               (planned)
   submit [n]          submit a form                            (planned)
   back                return to the previous page              (planned)
+  login               seed cookies for a session (--cookie, --domain)
+  logout [session]    clear saved cookies for a session
   session ls|rm       manage saved sessions                    (planned)
 
 flags:
@@ -37,6 +50,11 @@ flags:
                       memory. --stats is an alias; OC_VERBOSE=1 turns it on
                       globally. Off by default because metrics cost tokens too.
   --session <name>    keep separate page state under a name (default: default)
+
+Authenticated pages: run 'oc login --cookie "..." --domain example.com' to seed
+cookies for a session (default lifetime 1h, override with --expires 2h). Cookies
+live in a separate file from page state and are sent on every fetch for that
+session. 'oc logout' clears them early.
 
 A page that comes back with no readable text (JavaScript-only, a consent wall,
 a bot challenge) says so in one line on stderr and exits 2, so a caller can
@@ -81,7 +99,7 @@ const noContent = (url, detail, hint = "; 'oc raw' has the page's markdown if th
 // Anything else in the first position is tried as a site shortcut before it is
 // called unknown, so a new clis/ definition needs no change here.
 const COMMANDS = new Set([
-  'open', 'do', 'raw', 'read', 'next', 'find', 'fill', 'submit', 'back', 'session', 'sites',
+  'open', 'do', 'raw', 'read', 'next', 'find', 'fill', 'submit', 'back', 'login', 'logout', 'session', 'sites',
 ]);
 
 async function main() {
@@ -94,6 +112,9 @@ async function main() {
       verbose: { type: 'boolean', short: 'v', default: false },
       budget: { type: 'string' },
       session: { type: 'string' },
+      cookie: { type: 'string' },
+      domain: { type: 'string' },
+      expires: { type: 'string' },
       help: { type: 'boolean', short: 'h', default: false },
     },
   });
@@ -118,12 +139,26 @@ async function main() {
     command = 'open';
   }
 
-  const sessionName = values.session || DEFAULT_SESSION;
+  const sessionName = assertSafeName(values.session || DEFAULT_SESSION);
   // Zero means "whatever this command's default is", which differs: the
   // compact view targets 500 tokens, read targets 2000.
   const asked = values.budget ? Number(values.budget) : 0;
   if (values.budget && (!Number.isFinite(asked) || asked <= 0)) {
     throw new Error('--budget must be a positive number');
+  }
+
+  if (command === 'login') {
+    if (!values.cookie) throw new Error("usage: oc login --cookie \"...\" --domain example.com [--expires 1h] [--session name]");
+    if (!values.domain) throw new Error('--domain is required (the site hostname your cookies belong to)');
+    const expiresMs = values.expires ? parseExpires(values.expires) : DEFAULT_EXPIRES_MS;
+    loginCookieJar(sessionName, values.cookie, values.domain, { expiresMs });
+    return;
+  }
+
+  if (command === 'logout') {
+    const name = args[0] ? assertSafeName(args[0]) : sessionName;
+    clearCookieJar(name);
+    return;
   }
 
   switch (command) {
@@ -148,8 +183,18 @@ async function main() {
       }
       if (!url) throw new Error(`usage: oc ${command} <url>`);
       const budget = asked || 500;
+      const jarData = loadCookieJar(sessionName);
+      // Clock-expired jars are wiped on load; say so in the same voice as a
+      // login-page redirect rather than fetching with no cookies and guessing.
+      if (jarData === JAR_EXPIRED) {
+        noContent(url, sessionExpiredMessage(url));
+        return;
+      }
+      const hadAuth = jarData != null;
+      const jar = jarData ? createJarHandle(sessionName, jarData) : null;
       const t0 = performance.now();
-      const { url: finalUrl, html, status, via } = await fetchPage(url);
+      const { url: finalUrl, html, status, via } = await fetchPage(url, { jar: jar ?? undefined });
+      if (jar) saveCookieJar(sessionName, jar.toJSON());
       const fetchMs = performance.now() - t0;
       const resources = () => {
         const processMs = performance.now() - t0 - fetchMs;
@@ -160,16 +205,29 @@ async function main() {
       const htmlTokens = estimateTokens(html);
       if (values.json) {
         const page = distill(html, finalUrl);
-        remember(page, sessionName);
-        const failure = contentFailure(contentTokens(page), htmlTokens);
+        const auth = authFailure(page, finalUrl, { hadAuth });
+        const failure = auth ?? contentFailure(contentTokens(page), htmlTokens);
         // Always present, so a caller can branch on the field rather than on
         // whether a field it was hoping for turned up.
         console.log(JSON.stringify({ ...page, empty: failure != null }));
         if (verbose) console.error(resources());
+        if (auth) {
+          if (jar) clearCookieJar(sessionName);
+          noContent(finalUrl, auth);
+          return;
+        }
+        remember(page, sessionName);
         if (failure) noContent(finalUrl, failure);
         return;
       }
       if (command === 'raw') {
+        const page = distill(html, finalUrl);
+        const auth = authFailure(page, finalUrl, { hadAuth });
+        if (auth) {
+          if (jar) clearCookieJar(sessionName);
+          noContent(finalUrl, auth);
+          return;
+        }
         const out = values.html ? toHTML(html, finalUrl) : toMarkdown(html, finalUrl);
         const outTokens = estimateTokens(out);
         console.log(out);
@@ -187,7 +245,13 @@ async function main() {
         return;
       }
       const page = distill(html, finalUrl);
-      const failure = contentFailure(contentTokens(page), htmlTokens);
+      const auth = authFailure(page, finalUrl, { hadAuth });
+      const failure = auth ?? contentFailure(contentTokens(page), htmlTokens);
+      if (auth) {
+        if (jar) clearCookieJar(sessionName);
+        noContent(finalUrl, auth);
+        return;
+      }
       const { text, stats } = render(page, { budget });
       remember(page, sessionName, stats.next);
       console.log(text);
