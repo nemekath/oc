@@ -490,13 +490,13 @@ test('a page that arrives with no readable text is reported as a failure', () =>
   };
 
   // Nothing at all, whatever the page weighed.
-  assert.match(verdict('<div id="root"></div>', 0), /~0 tokens of text on the whole page/);
+  assert.match(verdict('<div id="root"></div>', 0), /no text on the whole page/);
 
   // Menu links only: short labels are furniture, so this page has no content
   // either, however much markup came with it.
   const chrome = ['Help', 'Log in', 'Content Policy', 'About', 'Careers', 'Press']
     .map((t) => `<a href="/${t}">${t}</a>`).join('');
-  assert.match(verdict(chrome, 60_000), /~0 tokens of text on the whole page/);
+  assert.match(verdict(chrome, 60_000), /no text on the whole page/);
 
   // A consent wall or a login gate: a sentence or two of real text, out of
   // markup far too big to have carried only that.
@@ -506,6 +506,36 @@ test('a page that arrives with no readable text is reported as a failure', () =>
   // The same page without that weight behind it is a short page, not a failed
   // render, so it has to pass.
   assert.equal(verdict(gate, 0), null);
+});
+
+test('a terse page that arrived terse is content, not a failed render', () => {
+  // A status endpoint or a one-line answer distills fine and has to exit 0:
+  // calling it gated would send an agent to a browser for a page it was
+  // already holding. Only weight it never rendered is evidence of a gate.
+  const html = '<html><head><title>status</title></head><body><p>All systems operational.</p></body></html>';
+  const page = distill(html, 'https://fixture.test/status');
+  assert.equal(contentFailure(contentTokens(page), estimateTokens(html)), null);
+  const json = distill('{"status":"ok"}', 'https://fixture.test/health');
+  assert.equal(contentFailure(contentTokens(json), 4), null);
+});
+
+test('page-written scalars are capped at the render boundary', () => {
+  // The title and every heading are the page's to write, so without a cap one
+  // hostile scalar prints unbounded output whatever the budget says.
+  const bigTitle = 'title word '.repeat(1000).trim();
+  const bigHeading = 'heading word '.repeat(1000).trim();
+  const page = distill(
+    `<html><head><title>${bigTitle}</title></head><body><h1>${bigHeading}</h1><p>short</p></body></html>`,
+    'https://fixture.test/big');
+  const { text } = render(page, { budget: 100 });
+  for (const line of text.split('\n')) {
+    assert.ok(line.length < 300, `a render line ran to ${line.length} chars`);
+  }
+  assert.match(text, /\.\.\. \+[\d,]+ chars/);
+  // The distilled page keeps the full values: --json is the machine-stable
+  // view, its size is bounded by the fetch cap, and machines cut for
+  // themselves.
+  assert.equal(page.title, bigTitle);
 });
 
 test('a link-list page counts as content even with no prose on it', () => {

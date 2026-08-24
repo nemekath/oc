@@ -136,6 +136,15 @@ export function read(n, { session = DEFAULT_SESSION, budget = 2000 } = {}) {
     if (!line) continue;
     const cost = estimateTokens(line) + 1;
     if (spent + cost > budget && lines.length) break;
+    // The first line always prints so read never answers with nothing, but
+    // its text is the page's to write and so has no natural size. Alone over
+    // budget it still gets cut: 'up to N tokens' is a promise the page must
+    // not be able to break.
+    if (!lines.length && cost > budget) {
+      lines.push(`${line.slice(0, budget * 4)} ... cut at ~${budget} tokens, raise --budget for the rest`);
+      spent += budget;
+      continue;
+    }
     spent += cost;
     lines.push(line);
   }

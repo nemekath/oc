@@ -21,6 +21,19 @@ const open = (name = 'default', budget = 500) => {
   saveSession(name, sessionFromPage(p, loadSession(name), { cursor: render(p, { budget }).stats.next }));
 };
 
+test("read cuts even a first block bigger than its whole budget", () => {
+  // The first line of a read always prints, but its text is the page's to
+  // write, so alone-over-budget still cuts: 'up to N tokens' is a promise the
+  // page must not be able to break.
+  const wall = 'sentence after sentence of the same thing. '.repeat(500);
+  const p = distill(`<html><body><p id="wall">${wall}</p></body></html>`, 'https://example.test/wall');
+  saveSession('wall', sessionFromPage(p, null, { cursor: null }));
+  const n = p.blocks.find((b) => b.type === 'text').n;
+  const out = read(n, { session: 'wall', budget: 100 });
+  assert.ok(out.length < 100 * 4 + 200, `read printed ${out.length} chars against a budget of 100 tokens`);
+  assert.match(out, /cut at ~100 tokens, raise --budget/);
+});
+
 test('a rendered page is remembered with absolute URLs for every handle', () => {
   open();
   const state = loadSession('default');

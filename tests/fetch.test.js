@@ -663,3 +663,41 @@ test('a proxied response exposes each Set-Cookie intact, even with a comma in Ex
     proxy.close();
   }
 });
+
+test('a body over the cap is refused, from the header or from the bytes', async () => {
+  const { assertBodySize, readBody, MAX_BODY } = await import('../src/fetch.js');
+
+  // The header check catches a response honest about its size early.
+  assert.doesNotThrow(() => assertBodySize(MAX_BODY, 'https://example.test/big'));
+  assert.throws(() => assertBodySize(MAX_BODY + 1, 'https://example.test/big'), /more than oc will read/);
+
+  // The header is optional and untrusted, so the stream is counted too: a
+  // chunked response crossing the cap fails deterministically, and one just
+  // below it arrives whole.
+  const mb = new Uint8Array(1024 * 1024).fill(120);
+  const stream = (chunks) => new Response(new ReadableStream({
+    start(c) {
+      for (let i = 0; i < chunks; i++) c.enqueue(mb);
+      c.close();
+    },
+  }));
+  await assert.rejects(() => readBody(stream(26), 'https://example.test/bomb'), /more than oc will read/);
+  const small = await readBody(stream(2), 'https://example.test/fine');
+  assert.equal(small.length, 2 * 1024 * 1024);
+});
+
+test('the proxy transport counts the body against the same cap', async () => {
+  const proxy = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html' });
+    const mb = Buffer.alloc(1024 * 1024, 'x');
+    for (let i = 0; i < 26; i++) res.write(mb);
+    res.end();
+  });
+  const port = await listen(proxy);
+  try {
+    const res = await proxyGet('http://example.test/bomb', `http://127.0.0.1:${port}`);
+    await assert.rejects(() => res.text(), /more than oc will read/);
+  } finally {
+    proxy.close();
+  }
+});

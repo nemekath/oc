@@ -32,19 +32,22 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.channel.outputs.channel }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # No registry-url here: it writes an .npmrc auth-token line with a
       # placeholder value, and npm then authenticates with that instead of
       # falling through to OIDC trusted publishing.
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-      # Trusted publishing needs npm 11.5.1 or newer.
-      - run: npm install -g npm@latest
+      # Trusted publishing needs npm 11.5.1 or newer; node 24 has bundled a
+      # new-enough npm since 24.4, so nothing extra is installed here.
       - run: npm ci
       - run: npm test
       - name: pick channel and version
+        id: channel
         run: |
           V=$(node -p "require('./package.json').version")
           CHANNEL="${{ github.event_name == 'workflow_dispatch' && inputs.channel || '' }}"
@@ -67,4 +70,46 @@ jobs:
             npm version --no-git-tag-version "${V%%-*}-dev.${{ github.run_number }}"
           fi
           echo "CHANNEL=$CHANNEL" >> "$GITHUB_ENV"
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+      # Agents execute whatever the skill pins, and skills.sh renders that line
+      # verbatim, so a stable release shipping an older pin is a wrong install
+      # command in front of every reader. Beta and dev keep the last stable pin
+      # on purpose, so this only binds the latest channel.
+      - name: skill pin matches a stable release
+        run: |
+          if [ "$CHANNEL" != latest ]; then
+            echo "channel $CHANNEL: skill keeps the last stable pin on purpose"
+            exit 0
+          fi
+          V=$(node -p "require('./package.json').version")
+          PINS=$(grep -o '@only-cli/oc@[0-9][0-9A-Za-z.-]*' skills/web-browsing-cli/SKILL.md | sort -u)
+          if [ "$PINS" != "@only-cli/oc@$V" ]; then
+            echo "release is $V but skills/web-browsing-cli/SKILL.md pins:" >&2
+            echo "$PINS" >&2
+            echo "bump the pin before cutting a stable release" >&2
+            exit 1
+          fi
+          echo "skill pin is @only-cli/oc@$V"
       - run: npm publish --access public --provenance --tag "$CHANNEL"
+
+  # skills.sh renders SKILL.md straight from GitHub, but it only re-reads a
+  # repository after its telemetry service sees an install from it, and repo
+  # pages are cached on top of that. Publishing to npm tells it nothing, which
+  # is how the page sat on the 0.2.0 pin while main had already shipped 0.4.0.
+  # One install per stable release is what makes the page catch up. There is no
+  # refresh API to call instead: the documented skills.sh API is read only.
+  refresh-skills-page:
+    needs: publish
+    if: needs.publish.outputs.channel == 'latest'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      # Same invocation the install-loop experiment proved out, telemetry left
+      # on so the install is reported. Never fail a release over this: the
+      # package is already published by the time it runs, and the page catching
+      # up late is a smaller problem than a red release.
+      - name: install the skill so skills.sh re-reads the repo
+        continue-on-error: true
+        run: npx --yes skills add https://github.com/only-cli/oc --skill web-browsing-cli --yes
