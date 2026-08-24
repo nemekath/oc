@@ -498,6 +498,65 @@ test('proxyGet returns the origin body through an HTTPS CONNECT tunnel', async (
   }
 });
 
+// A separate cert whose SAN covers the IPv6 loopback ::1, so the tunneled
+// TLS handshake to an IPv6 literal can be validated offline.
+const LOCAL_CERT_V6 = `-----BEGIN CERTIFICATE-----
+MIIBsjCCAVigAwIBAgIUYhesMP2mQCQ6S4SrcGJshDK0g9owCgYIKoZIzj0EAwIw
+FzEVMBMGA1UEAwwMb2MtaXB2Ni10ZXN0MB4XDTI2MDgyNDE4NTM1MVoXDTM2MDgy
+MTE4NTM1MVowFzEVMBMGA1UEAwwMb2MtaXB2Ni10ZXN0MFkwEwYHKoZIzj0CAQYI
+KoZIzj0DAQcDQgAE26JWljo6HQCqheYsEL/xViNZpq+6NPKBlEjlvXf/WtJa2mAl
+qELRtfWYJeRS+0ogeMNjYXTYME2WKHL3il88cqOBgTB/MB0GA1UdDgQWBBSx4h35
+MCnlyDhcx7ATZiWyJ/IYEzAfBgNVHSMEGDAWgBSx4h35MCnlyDhcx7ATZiWyJ/IY
+EzAPBgNVHRMBAf8EBTADAQH/MCwGA1UdEQQlMCOHEAAAAAAAAAAAAAAAAAAAAAGH
+BH8AAAGCCWxvY2FsaG9zdDAKBggqhkjOPQQDAgNIADBFAiAFJGgQcNAAXI5HWj02
+NYBPF1nTo3BfOoT/PY5pUsSjuAIhAP9oPp1R2+ckC9sXTOL8n1vw2qVElGDLuvES
+Hi24p3Qi
+-----END CERTIFICATE-----`;
+
+const LOCAL_KEY_V6 = `-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgjZ74TmqrsdfKIelm
+KQFHEBF+5zD8lk8lDLuPgvz2dNGhRANCAATbolaWOjodAKqF5iwQv/FWI1mmr7o0
+8oGUSOW9d/9a0lraYCWoQtG19Zgl5FL7SiB4w2NhdNgwTZYocveKXzxy
+-----END PRIVATE KEY-----`;
+
+test('an IPv6 literal target tunnels through a proxy with its brackets stripped', async () => {
+  // URL.hostname keeps the brackets ("[::1]"); before the fix they reached
+  // tls.connect as a DNS name and the handshake never happened.
+  const origin = https.createServer({ cert: LOCAL_CERT_V6, key: LOCAL_KEY_V6 }, (req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end('<html><title>v6 tunnel</title></html>');
+  });
+  await new Promise((r) => origin.listen(0, '::1', r));
+  const originPort = origin.address().port;
+
+  const proxy = http.createServer();
+  proxy.on('connect', (req, socket) => {
+    const host = req.url.replace(/:\d+$/, '').replace(/^\[|\]$/g, '');
+    const port = Number(req.url.slice(req.url.lastIndexOf(':') + 1));
+    const dest = net.connect(port, host, () => {
+      socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+      dest.pipe(socket);
+      socket.pipe(dest);
+    });
+    dest.on('error', () => socket.destroy());
+  });
+  const proxyPort = await listen(proxy);
+
+  try {
+    const res = await proxyGet(
+      `https://[::1]:${originPort}/page`,
+      `http://127.0.0.1:${proxyPort}`,
+      { 'user-agent': 'oc-test' },
+      { ca: LOCAL_CERT_V6 },
+    );
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), '<html><title>v6 tunnel</title></html>');
+  } finally {
+    origin.close();
+    proxy.close();
+  }
+});
+
 test('followRedirects still blocks a private hop when the transport is a proxy', async () => {
   // The page 302s to loopback. The proxy is also loopback, which is allowed;
   // the hop is not. Blocked before the second request goes out.
@@ -529,4 +588,78 @@ test('proxyGet refuses a non-HTTP proxy scheme', () => {
     () => proxyGet('https://example.test/', 'socks5://127.0.0.1:1080'),
     /unsupported proxy protocol \(socks5\)/,
   );
+});
+
+test('followRedirects sends jar cookies on every hop and stores Set-Cookie', () => withoutProxyEnv(async () => {
+  const { jarFromCookieHeader, createJarHandle } = await import('../src/cookies.js');
+  const seed = jarFromCookieHeader('sid=abc', 'public.example');
+  const jar = createJarHandle('test', seed);
+  const seen = [];
+  const get = (url) => {
+    seen.push({ url, cookie: jar.cookieHeaderFor(url) });
+    const setCookie = url.includes('/two')
+      ? ['fresh=1; Path=/; Domain=public.example']
+      : [];
+    return Promise.resolve({
+      status: url.includes('/two') ? 200 : 302,
+      headers: {
+        get(name) {
+          if (name === 'location' && !url.includes('/two')) return 'https://public.example/two';
+          if (name === 'set-cookie') return setCookie.join(', ');
+          return null;
+        },
+        getSetCookie() { return setCookie; },
+      },
+    });
+  };
+  const { getSetCookieHeaders } = await import('../src/cookies.js');
+  await followRedirects(get, 'https://public.example/one', {
+    onResponse: (url, res) => jar.storeFromResponse(url, getSetCookieHeaders(res)),
+  });
+  assert.equal(seen.length, 2);
+  assert.equal(seen[0].cookie, 'sid=abc');
+  assert.equal(seen[1].cookie, 'sid=abc');
+  assert.ok(jar.toJSON().cookies.some((c) => c.name === 'fresh'));
+}));
+
+test('proxyGet forwards a cookie header from the jar', async () => {
+  const seen = [];
+  const proxy = http.createServer((req, res) => {
+    seen.push({ cookie: req.headers.cookie });
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end('<html><title>ok</title></html>');
+  });
+  const port = await listen(proxy);
+  try {
+    await proxyGet('http://example.test/page', `http://127.0.0.1:${port}`, { cookie: 'a=1; b=2' });
+    assert.equal(seen[0].cookie, 'a=1; b=2');
+  } finally {
+    proxy.close();
+  }
+});
+
+test('a proxied response exposes each Set-Cookie intact, even with a comma in Expires', async () => {
+  const { getSetCookieHeaders } = await import('../src/cookies.js');
+  const proxy = http.createServer((req, res) => {
+    // Two separate Set-Cookie headers, one carrying a comma inside Expires:
+    // joining them into one string would make them impossible to split back.
+    res.writeHead(200, {
+      'content-type': 'text/html',
+      'set-cookie': [
+        'sid=abc; Path=/; Expires=Wed, 21 Oct 2026 07:28:00 GMT',
+        'theme=dark; Path=/',
+      ],
+    });
+    res.end('<html><title>ok</title></html>');
+  });
+  const port = await listen(proxy);
+  try {
+    const res = await proxyGet('http://example.test/page', `http://127.0.0.1:${port}`);
+    const headers = getSetCookieHeaders(res);
+    assert.equal(headers.length, 2);
+    assert.match(headers[0], /^sid=abc;/);
+    assert.match(headers[1], /^theme=dark;/);
+  } finally {
+    proxy.close();
+  }
 });
