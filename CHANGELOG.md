@@ -3,6 +3,17 @@
 Notable changes per release. Releases before 0.4.0 are listed at
 [github.com/only-cli/oc/releases](https://github.com/only-cli/oc/releases).
 
+## Unreleased
+
+### Added
+
+- Language documentation shortcuts: `py`, `mdn`, `node`, `ruby`, `go`, `rust`,
+  `java`, `php`, `cpp`, and `ts`, plus a `dotnet` verb on `learn` for the .NET
+  API browser. `search` on `py`, `node`, and `ruby` ranks the docs' own search
+  index locally and on `mdn` asks the site's API; the sites that only render
+  docs search client-side go through DuckDuckGo with a baked-in `site:` filter
+  instead. (#25)
+
 ## 0.4.0
 
 ### Added
