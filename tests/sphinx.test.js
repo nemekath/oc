@@ -43,6 +43,15 @@ test('titles are flattened to text before they reach the results page', () => {
   assert.equal(found.docs[0].title, 'json - JSON encoder and decoder');
 });
 
+test('a tag the title never closes is stripped, not left standing', () => {
+  // 'json encoder <script src=' has no closing '>', so a strip that requires
+  // one would hand '<script' onward. No '<' may survive the flattening.
+  const nested = { ...INDEX, titles: ['json encoder <script src=', ...INDEX.titles.slice(1)] };
+  const found = searchIndex(nested, 'json');
+  assert.equal(found.docs[0].title, 'json encoder');
+  assert.doesNotMatch(resultsToHTML(BASE, 'json', found, nested), /<script/);
+});
+
 test('every word must match, and when none can, any-word results say so', () => {
   // 'json' hits doc 0, 'socket' hits doc 2, nothing hits both.
   const found = searchIndex(INDEX, 'json socket');

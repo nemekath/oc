@@ -151,8 +151,12 @@ export function searchIndex(index, query) {
 
 // Titles in the index arrive as the HTML of the page's <h1>, markup and all
 // (docs.python.org wraps module names in <code> spans), so they are flattened
-// to text before they are placed on the results page.
-const plainTitle = (t) => String(t).replace(/<[^>]*>/g, '');
+// to text before they are placed on the results page. The '>' is optional so
+// a tag the title never closes is dropped too, not left standing as '<script'
+// for some later layer to trip on: a title is index data from the network,
+// and no '<' survives this. A literal less-than in a real title arrives as
+// '&lt;', so nothing legitimate is lost.
+const plainTitle = (t) => String(t).replace(/<[^>]*>?/g, '').trim();
 
 const escapeHTML = (s) => String(s)
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
