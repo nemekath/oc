@@ -6,6 +6,7 @@ import { render, estimateTokens, contentTokens, contentFailure, MIN_CONTENT } fr
 import { resolveSite, listSites } from './sites.js';
 import { sphinxSearch } from './sphinx.js';
 import { nodeSearch } from './nodedocs.js';
+import { rdocSearch } from './rdoc.js';
 import { apiSearch } from './apisearch.js';
 import * as act from './act.js';
 import { DEFAULT_SESSION, loadSession, saveSession, sessionFromPage } from './session.js';
@@ -118,7 +119,8 @@ async function main() {
   if (!COMMANDS.has(command)) {
     const site = resolveSite(command, args);
     if (!site) throw new Error(`unknown command '${command}', run oc --help`);
-    if (site.sphinx || site.nodedoc || site.api) {
+    // Only a search shape resolves with a query; a URL shape never has one.
+    if (site.query != null) {
       search = site;
       command = 'search';
     } else {
@@ -212,18 +214,18 @@ async function main() {
       return;
     }
     case 'search': {
-      // A search oc runs itself: a Sphinx site's index or the Node.js docs
-      // corpus is fetched (or read back from its day cache) and ranked here,
-      // a JSON search API is asked directly. Either way the result list rides
-      // the exact `open` path: distilled, rendered, remembered, so `do <n>`
+      // A search oc runs itself: a site's static index or docs corpus is
+      // fetched (or read back from its day cache) and ranked here, a JSON
+      // search API is asked directly. Either way the result list rides the
+      // exact `open` path: distilled, rendered, remembered, so `do <n>`
       // follows a result. Only the list is ever printed; the index, corpus,
       // and response stay out of context.
       const t0 = performance.now();
-      const { url, html, via } = search.sphinx
-        ? await sphinxSearch(search.sphinx, search.query)
-        : search.nodedoc
-          ? await nodeSearch(search.nodedoc, search.query)
-          : await apiSearch(search.api, search.query);
+      const local = { sphinx: sphinxSearch, nodedoc: nodeSearch, rdoc: rdocSearch };
+      const kind = Object.keys(local).find((k) => search[k]);
+      const { url, html, via } = kind
+        ? await local[kind](search[kind], search.query)
+        : await apiSearch(search.api, search.query);
       const page = distill(html, url);
       if (values.json) {
         remember(page, sessionName);

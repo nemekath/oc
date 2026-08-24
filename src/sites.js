@@ -5,9 +5,10 @@
  * resolves to one and hands off to the same fetch and render path `oc open`
  * uses, so nothing here can change what a page costs or how it reads. The
  * other shapes are searches cli.js runs itself and renders like any other
- * page: `sphinx`, for a docs site whose search only exists as a static index
- * file, `nodedoc`, for the Node.js API docs, which ship their reference the
- * same way, and `api`, for a site whose search answers as JSON.
+ * page: `sphinx` and `rdoc`, for docs sites whose search only exists as a
+ * static index file, `nodedoc`, for the Node.js API docs, which ship their
+ * reference the same way, and `api`, for a site whose search answers as
+ * JSON.
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
@@ -29,12 +30,17 @@ const ALIASES = {
   py: 'docs.python.org',
   mdn: 'developer.mozilla.org',
   node: 'nodejs.org',
+  rust: 'doc.rust-lang.org',
+  java: 'docs.oracle.com',
+  ruby: 'docs.ruby-lang.org',
+  cpp: 'en.cppreference.com',
+  ts: 'typescriptlang.org',
   gcp: 'cloud.google.com',
   learn: 'learn.microsoft.com',
   wiki: 'wikipedia.org',
 };
 
-/** @typedef {{open?: string, sphinx?: string, nodedoc?: string, api?: string, page?: string, results?: string, fields?: Record<string, string>, total?: string, args?: string[]}} Shortcut */
+/** @typedef {{open?: string, sphinx?: string, nodedoc?: string, rdoc?: string, api?: string, page?: string, results?: string, fields?: Record<string, string>, total?: string, args?: string[]}} Shortcut */
 /** @typedef {{domain: string, commands: Record<string, Shortcut>}} Site */
 
 /** @type {Map<string, Site>|null} */
@@ -91,7 +97,7 @@ const verbs = (site) =>
  * instead, since the agent has the right site and only needs the verb list.
  * @param {string} name
  * @param {string[]} args
- * @returns {{url?: string, sphinx?: string, nodedoc?: string, api?: Shortcut, query?: string, domain: string, command: string}|null}
+ * @returns {{url?: string, sphinx?: string, nodedoc?: string, rdoc?: string, api?: Shortcut, query?: string, domain: string, command: string}|null}
  */
 export function resolveSite(name, args) {
   const site = sites().get(name.toLowerCase());
@@ -109,13 +115,14 @@ export function resolveSite(name, args) {
   // separate words ('oc ddg search claude code cli') works unquoted.
   const values = need.map((_, i) =>
     i === need.length - 1 ? rest.slice(i).join(' ') : rest[i]);
-  // A sphinx, nodedoc, or API search has no page URL to build: the query is
-  // handed back whole for cli.js to run against the site's own search.
-  if (def.sphinx) {
-    return { sphinx: def.sphinx, query: values[values.length - 1] ?? '', domain: site.domain, command: verb };
-  }
-  if (def.nodedoc) {
-    return { nodedoc: def.nodedoc, query: values[values.length - 1] ?? '', domain: site.domain, command: verb };
+  // A search oc runs itself has no page URL to build: the query is handed
+  // back whole for cli.js to run against the site's own search. The local
+  // backends need only their docs root; the API shape needs its whole
+  // definition, since it names the endpoint and the response fields.
+  for (const kind of ['sphinx', 'nodedoc', 'rdoc']) {
+    if (def[kind]) {
+      return { [kind]: def[kind], query: values[values.length - 1] ?? '', domain: site.domain, command: verb };
+    }
   }
   if (def.api) {
     return { api: def, query: values[values.length - 1] ?? '', domain: site.domain, command: verb };
