@@ -97,7 +97,7 @@ export const FINISH = 4;
  */
 export function render(page, { budget = 500, from = 0 } = {}) {
   const blocks = collapseRuns(page.blocks);
-  const head = page.title ? [from > 0 ? `# ${page.title} (continued)` : `# ${page.title}`] : [];
+  const head = page.title ? [from > 0 ? `# ${truncate(page.title)} (continued)` : `# ${truncate(page.title)}`] : [];
   const lines = [...head];
   let spent = estimateTokens(lines.join('\n'));
   let hasLinks = false;
@@ -209,13 +209,13 @@ export function formatBlock(b, { full = false } = {}) {
   const tag = b.n == null ? '' : `[${b.n}] `;
   switch (b.type) {
     case 'heading':
-      return `${'#'.repeat(Math.min(b.level ?? 2, 3))} ${tag}${b.text}`;
+      return `${'#'.repeat(Math.min(b.level ?? 2, 3))} ${tag}${full ? b.text : truncate(b.text)}`;
     case 'link':
       return `${tag}${full ? b.text : truncate(b.text)}`;
     case 'button':
       return `${tag}button "${full ? b.text : truncate(b.text)}"`;
     case 'input':
-      return `${tag}input ${b.name} (${b.text})`;
+      return `${tag}input ${truncate(b.name ?? '')} (${truncate(b.text ?? '')})`;
     case 'divider':
       return b.text;
     default:

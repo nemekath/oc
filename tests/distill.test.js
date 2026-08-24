@@ -519,6 +519,25 @@ test('a terse page that arrived terse is content, not a failed render', () => {
   assert.equal(contentFailure(contentTokens(json), 4), null);
 });
 
+test('page-written scalars are capped at the render boundary', () => {
+  // The title and every heading are the page's to write, so without a cap one
+  // hostile scalar prints unbounded output whatever the budget says.
+  const bigTitle = 'title word '.repeat(1000).trim();
+  const bigHeading = 'heading word '.repeat(1000).trim();
+  const page = distill(
+    `<html><head><title>${bigTitle}</title></head><body><h1>${bigHeading}</h1><p>short</p></body></html>`,
+    'https://fixture.test/big');
+  const { text } = render(page, { budget: 100 });
+  for (const line of text.split('\n')) {
+    assert.ok(line.length < 300, `a render line ran to ${line.length} chars`);
+  }
+  assert.match(text, /\.\.\. \+[\d,]+ chars/);
+  // The distilled page keeps the full values: --json is the machine-stable
+  // view, its size is bounded by the fetch cap, and machines cut for
+  // themselves.
+  assert.equal(page.title, bigTitle);
+});
+
 test('a link-list page counts as content even with no prose on it', () => {
   // Hacker News and search results are links and nothing else, so a rule that
   // counted only prose would call the tool's best pages empty.
