@@ -12,6 +12,7 @@ Key facts:
 - Benchmarked at roughly 45x fewer tokens than reading raw HTML, with per-task numbers at https://github.com/only-cli/benchmarks
 - Works on any mostly-static website; tuned shortcuts ship for Hacker News, Reddit, GitHub, X, LinkedIn (public guest views), DuckDuckGo, Bing, Stack Overflow (via its Atom feeds and the Stack Exchange API), Yahoo Finance (quotes, history, markets), and the AWS, Google Cloud, and Microsoft Learn documentation sites (guides, CLI reference, and search)
 - JSON APIs render like pages: an endpoint that answers with JSON becomes one numbered item per record, with the fields that differ between items kept and the ones every item shares stated once, so a search endpoint reads like a results page for a few hundred tokens
+- A page that comes back with no readable text (JavaScript-only, a consent wall, a bot challenge) prints one line on stderr and exits 2, rather than reporting an empty render as a success. `--json` carries the same verdict as an `empty` field, so a caller can tell "nothing on this page" from "oc could not read this page" and fall back to a browser only when it is worth it
 - X profiles and individual posts read without a login (about 390 and 260 tokens); X search, explore, and hashtag pages do not, and oc reports the block instead of guessing
 - Requests impersonate Chrome, so pages that block plain scripts often still work
 - Agent skill included: `npx skills add https://github.com/only-cli/oc --skill web-browsing-cli` ([skills.sh](https://www.skills.sh/only-cli/oc/web-browsing-cli))

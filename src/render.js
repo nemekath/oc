@@ -16,6 +16,62 @@ export const estimateTokens = (s) => Math.ceil(s.length / 4);
 
 const num = (v) => v.toLocaleString('en-US');
 
+// A page that distilled to nothing must not read like a page with nothing on
+// it. JS-only pages, consent walls, and bot challenges all answer HTTP 200 with
+// markup carrying no text, and "100% saved" is technically true of a render
+// that saved every token by extracting none. From the output alone an agent
+// cannot tell that from a genuinely empty page, so it never falls back to
+// something heavier and an empty result travels on as evidence. oc has to fail
+// loud and cheap there instead, per principle 5 in CONTRIBUTING.
+//
+// The numbers below are measured, not guessed. Against live pages, the thinnest
+// render the README claims (an X profile) carries about 460 tokens of content,
+// while a JS-only or gated one carries under 55 (reddit.com/r/*,
+// instagram.com), so a threshold in between never has to be a close call.
+
+// Text the page itself wrote, in tokens: prose and headings, plus link and
+// button labels long enough to be content rather than furniture. Nav chrome is
+// short by nature ("Help", "Log in") and a headline or a post title is not,
+// which is what tells a link-list page (Hacker News, search results) from a
+// page whose only links are its own menu.
+const CONTENT_LABEL = 25;
+// Below this there is nothing to read whatever the page is, so how much markup
+// it arrived in does not matter.
+export const MIN_CONTENT = 25;
+// Below this, with markup that large behind it, the fetch worked and the render
+// did not: a real page of that weight always distills to more. A genuinely
+// short page is exempt, because its HTML never reaches THIN_HTML.
+const THIN_CONTENT = 100;
+const THIN_HTML = 2500;
+
+/**
+ * How much of a distilled page is text the page itself wrote.
+ * @param {import('./distill.js').Page} page
+ * @returns {number}
+ */
+export const contentTokens = (page) =>
+  page.blocks.reduce((sum, b) => {
+    if (b.type === 'heading' || b.type === 'text') return sum + estimateTokens(b.text ?? '');
+    const label = (b.type === 'link' || b.type === 'button') && (b.text ?? '').length > CONTENT_LABEL;
+    return label ? sum + estimateTokens(b.text) : sum;
+  }, 0);
+
+/**
+ * Why this render carries no content worth printing, as a phrase for the
+ * failure line, or null when it does carry some. Both figures are token counts,
+ * which is the unit the caller is paying in.
+ * @param {number} content
+ * @param {number} htmlTokens
+ * @returns {string|null}
+ */
+export function contentFailure(content, htmlTokens) {
+  if (content < MIN_CONTENT) return `~${content} tokens of text on the whole page`;
+  if (content < THIN_CONTENT && htmlTokens > THIN_HTML) {
+    return `~${content} tokens of text out of ~${htmlTokens} of HTML`;
+  }
+  return null;
+}
+
 // How far past the budget a page may run and still be printed whole. Cutting a
 // page that was nearly done costs the agent a second command, and a command is
 // dear: measured inside Claude Code, one tool call is 23,000 to 33,000 tokens of

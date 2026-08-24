@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { distill, toMarkdown, toHTML, feedToHTML, jsonToHTML, youtubeToHTML, transcriptToHTML, TEXT_CAP } from '../src/distill.js';
-import { render, estimateTokens } from '../src/render.js';
+import { render, estimateTokens, contentTokens, contentFailure } from '../src/render.js';
 
+const PAGES = new URL('./pages/', import.meta.url).pathname;
 const html = readFileSync(new URL('./pages/news.html', import.meta.url), 'utf8');
 const page = () => distill(html, 'https://example.test/news');
 const feed = readFileSync(new URL('./pages/feed.xml', import.meta.url), 'utf8');
@@ -475,4 +476,53 @@ test('a truncated code block ends on a line, not mid-statement', () => {
   // The kept part stops where a statement did, so every line shown is whole.
   assert.ok(shown[marker].startsWith('line'), `cut mid-line: ${shown[marker]}`);
   assert.ok(shown[marker].includes(');'), `cut mid-statement: ${shown[marker]}`);
+});
+
+test('a page that arrives with no readable text is reported as a failure', () => {
+  // The failure mode issue #14 reports: HTTP 200, real markup, nothing to read.
+  // It has to be distinguishable from a page that renders short, because the
+  // caller's next move (fall back to a browser) depends on the difference.
+  const verdict = (body, size) => {
+    const filler = `<script>const pad = "${'x'.repeat(size)}";</script>`;
+    const page = distill(`<html><head><title>Reddit</title></head><body>${body}${filler}</body></html>`,
+      'https://fixture.test/js');
+    return contentFailure(contentTokens(page), estimateTokens(filler));
+  };
+
+  // Nothing at all, whatever the page weighed.
+  assert.match(verdict('<div id="root"></div>', 0), /~0 tokens of text on the whole page/);
+
+  // Menu links only: short labels are furniture, so this page has no content
+  // either, however much markup came with it.
+  const chrome = ['Help', 'Log in', 'Content Policy', 'About', 'Careers', 'Press']
+    .map((t) => `<a href="/${t}">${t}</a>`).join('');
+  assert.match(verdict(chrome, 60_000), /~0 tokens of text on the whole page/);
+
+  // A consent wall or a login gate: a sentence or two of real text, out of
+  // markup far too big to have carried only that.
+  const gate = '<p>To continue, accept cookies. We and our partners store and access '
+    + 'information on your device to personalise the content you see here.</p>';
+  assert.match(verdict(gate, 60_000), /tokens of text out of ~\d+ of HTML/);
+  // The same page without that weight behind it is a short page, not a failed
+  // render, so it has to pass.
+  assert.equal(verdict(gate, 0), null);
+});
+
+test('a link-list page counts as content even with no prose on it', () => {
+  // Hacker News and search results are links and nothing else, so a rule that
+  // counted only prose would call the tool's best pages empty.
+  const links = Array.from({ length: 12 }, (_, i) =>
+    `<a href="/${i}">A headline long enough to be a headline, number ${i}</a>`).join('');
+  const page = distill(`<html><body>${links}</body></html>`, 'https://fixture.test/list');
+  assert.equal(contentFailure(contentTokens(page), 30_000), null);
+});
+
+test('every fixture page reads as content, none as a failed render', () => {
+  // Feeds, a JSON API, and a YouTube watch page are all thin by design, which
+  // is exactly where this check must not cry wolf.
+  for (const name of readdirSync(PAGES)) {
+    const raw = readFileSync(PAGES + name, 'utf8');
+    const page = distill(raw, `https://api.example.test/2.3/search/advanced?site=fixture&f=${name}`);
+    assert.equal(contentFailure(contentTokens(page), estimateTokens(raw)), null, name);
+  }
 });
