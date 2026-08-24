@@ -4,6 +4,6 @@
     "js": { "open": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/{page}", "args": ["page"] },
     "css": { "open": "https://developer.mozilla.org/en-US/docs/Web/CSS/{page}", "args": ["page"] },
     "doc": { "open": "https://developer.mozilla.org/en-US/docs/{path}", "args": ["path"] },
-    "search": { "open": "https://html.duckduckgo.com/html/?q=site%3Adeveloper.mozilla.org+{query}", "args": ["query"] }
+    "search": { "api": "https://developer.mozilla.org/api/v1/search?q={query}&locale=en-US", "page": "https://developer.mozilla.org/en-US/search?q={query}", "results": "documents", "fields": { "title": "title", "url": "mdn_url", "text": "summary" }, "total": "metadata.total.value", "args": ["query"] }
   }
 }

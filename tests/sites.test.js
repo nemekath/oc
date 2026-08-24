@@ -53,8 +53,11 @@ test('every shipped definition is reachable and every url template is filled', (
     for (const [verb, def] of Object.entries(site.commands)) {
       const args = (def.args ?? []).map((a) => `test-${a}`);
       const resolved = resolveSite(name, [verb, ...args]);
-      // A sphinx-backed verb resolves to a site root to search, not a URL.
-      const url = resolved.url ?? resolved.sphinx;
+      // A search verb resolves to a site root or endpoint to ask, not a
+      // URL: an API endpoint keeps {query} until search time, so it is
+      // filled here the way apiSearch fills it before the template check.
+      const url = resolved.url ?? resolved.sphinx
+        ?? (def.args ?? []).reduce((u, a) => u.replaceAll(`{${a}}`, `test-${a}`), resolved.api?.api ?? '');
       assert.doesNotMatch(url, /[{}]/, `oc ${name} ${verb} left a template var in ${url}`);
       assert.equal(new URL(url).protocol, 'https:', `oc ${name} ${verb} is not https`);
     }
@@ -92,4 +95,7 @@ test('language docs shortcuts resolve, and a doc path keeps its slashes', () => 
   const py = resolveSite('py', ['search', 'json', 'dumps']);
   assert.equal(py.sphinx, 'https://docs.python.org/3/');
   assert.equal(py.query, 'json dumps');
+  const mdn = resolveSite('mdn', ['search', 'array', 'map']);
+  assert.equal(mdn.api.api, 'https://developer.mozilla.org/api/v1/search?q={query}&locale=en-US');
+  assert.equal(mdn.query, 'array map');
 });

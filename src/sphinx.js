@@ -167,7 +167,7 @@ const plainTitle = (t) => {
   return text.trim();
 };
 
-const escapeHTML = (s) => String(s)
+export const escapeHTML = (s) => String(s)
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
   .replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 

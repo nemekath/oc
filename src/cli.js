@@ -5,6 +5,7 @@ import { distill, toMarkdown, toHTML } from './distill.js';
 import { render, estimateTokens, contentTokens, contentFailure, MIN_CONTENT } from './render.js';
 import { resolveSite, listSites } from './sites.js';
 import { sphinxSearch } from './sphinx.js';
+import { apiSearch } from './apisearch.js';
 import * as act from './act.js';
 import { DEFAULT_SESSION, loadSession, saveSession, sessionFromPage } from './session.js';
 
@@ -112,13 +113,13 @@ async function main() {
   // A first word that is not a command may still be a site oc ships a
   // definition for, and a shortcut is only ever a URL, so it resolves to one
   // here and the rest of this function never learns it was not typed.
-  let sphinx = null;
+  let search = null;
   if (!COMMANDS.has(command)) {
     const site = resolveSite(command, args);
     if (!site) throw new Error(`unknown command '${command}', run oc --help`);
-    if (site.sphinx) {
-      sphinx = site;
-      command = 'sphinx';
+    if (site.sphinx || site.api) {
+      search = site;
+      command = 'search';
     } else {
       args = [site.url];
       command = 'open';
@@ -209,13 +210,16 @@ async function main() {
       if (failure) noContent(finalUrl, failure);
       return;
     }
-    case 'sphinx': {
-      // A Sphinx site's search index is fetched (or read back from its day
-      // cache) and ranked here, then the result list rides the exact `open`
-      // path: distilled, rendered, remembered, so `do <n>` follows a result.
-      // Only the list is ever printed; the index itself stays out of context.
+    case 'search': {
+      // A search oc runs itself: a Sphinx site's index is fetched (or read
+      // back from its day cache) and ranked here, a JSON search API is asked
+      // directly. Either way the result list rides the exact `open` path:
+      // distilled, rendered, remembered, so `do <n>` follows a result. Only
+      // the list is ever printed; index and response stay out of context.
       const t0 = performance.now();
-      const { url, html, via } = await sphinxSearch(sphinx.sphinx, sphinx.query);
+      const { url, html, via } = search.sphinx
+        ? await sphinxSearch(search.sphinx, search.query)
+        : await apiSearch(search.api, search.query);
       const page = distill(html, url);
       if (values.json) {
         remember(page, sessionName);
@@ -226,7 +230,7 @@ async function main() {
       remember(page, sessionName, stats.next);
       console.log(text);
       if (verbose) {
-        console.error(`~${stats.tokens} tokens, search index via ${via}, ${Math.round(performance.now() - t0)}ms`);
+        console.error(`~${stats.tokens} tokens, results via ${via}, ${Math.round(performance.now() - t0)}ms`);
       }
       return;
     }

@@ -4,9 +4,9 @@
  * Hacker News spells it /item?id=. A shortcut is almost always a URL: it
  * resolves to one and hands off to the same fetch and render path `oc open`
  * uses, so nothing here can change what a page costs or how it reads. The
- * one other shape is `sphinx`, for a docs site whose search only exists as a
- * static index file; cli.js runs that search and renders the results like
- * any other page.
+ * two other shapes are searches cli.js runs itself and renders like any
+ * other page: `sphinx`, for a docs site whose search only exists as a
+ * static index file, and `api`, for a site whose search answers as JSON.
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
@@ -33,7 +33,7 @@ const ALIASES = {
   wiki: 'wikipedia.org',
 };
 
-/** @typedef {{open?: string, sphinx?: string, args?: string[]}} Shortcut */
+/** @typedef {{open?: string, sphinx?: string, api?: string, page?: string, results?: string, fields?: Record<string, string>, total?: string, args?: string[]}} Shortcut */
 /** @typedef {{domain: string, commands: Record<string, Shortcut>}} Site */
 
 /** @type {Map<string, Site>|null} */
@@ -90,7 +90,7 @@ const verbs = (site) =>
  * instead, since the agent has the right site and only needs the verb list.
  * @param {string} name
  * @param {string[]} args
- * @returns {{url?: string, sphinx?: string, query?: string, domain: string, command: string}|null}
+ * @returns {{url?: string, sphinx?: string, api?: Shortcut, query?: string, domain: string, command: string}|null}
  */
 export function resolveSite(name, args) {
   const site = sites().get(name.toLowerCase());
@@ -108,10 +108,13 @@ export function resolveSite(name, args) {
   // separate words ('oc ddg search claude code cli') works unquoted.
   const values = need.map((_, i) =>
     i === need.length - 1 ? rest.slice(i).join(' ') : rest[i]);
-  // A sphinx search has no URL to build: the query is ranked against the
-  // site's index locally, so it is handed back whole for cli.js to run.
+  // A sphinx or API search has no page URL to build: the query is handed
+  // back whole for cli.js to run against the site's own search.
   if (def.sphinx) {
     return { sphinx: def.sphinx, query: values[values.length - 1] ?? '', domain: site.domain, command: verb };
+  }
+  if (def.api) {
+    return { api: def, query: values[values.length - 1] ?? '', domain: site.domain, command: verb };
   }
   const url = need.reduce(
     (open, arg, i) => open.replaceAll(`{${arg}}`, encode(values[i], def.open, arg)),
