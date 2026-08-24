@@ -8,16 +8,31 @@ description: Token-efficient web browsing and web content extraction for AI agen
 Renders a web page as a compact, numbered terminal view instead of raw HTML. A typical page is under 500 tokens.
 
 ```
-npx --yes @only-cli/oc@0.3.0 open <url>     compact view, numbered elements
-npx --yes @only-cli/oc@0.3.0 do <n>         follow link [n], or read it if [n] is text
-npx --yes @only-cli/oc@0.3.0 find <query>   where a string appears, or that place itself
+npx --yes @only-cli/oc@0.4.0 open <url>     compact view, numbered elements
+npx --yes @only-cli/oc@0.4.0 do <n>         follow link [n], or read it if [n] is text
+npx --yes @only-cli/oc@0.4.0 find <query>   where a string appears, or that place itself
                                             when only one matches
-npx --yes @only-cli/oc@0.3.0 next           next ~500 tokens of the page already open
-npx --yes @only-cli/oc@0.3.0 read <n>       full text of region [n]
-npx --yes @only-cli/oc@0.3.0 raw [url]      whole page as markdown (--html for cleaned HTML)
+npx --yes @only-cli/oc@0.4.0 next           next ~500 tokens of the page already open
+npx --yes @only-cli/oc@0.4.0 read <n>       full text of region [n]
+npx --yes @only-cli/oc@0.4.0 raw [url]      whole page as markdown (--html for cleaned HTML)
 ```
 
 None of these except `open`/`do`/`raw <url>` fetch anything — they replay the page `open` already saved.
+
+## Site shortcuts
+
+`oc <site> <verb> [args]` resolves to a URL and then behaves exactly like `open` on it, so it costs the same and reads the same. It saves guessing a URL shape and, on a few sites, points at the feed or public API that answers without a login.
+
+```
+oc hn top                      oc reddit sub ClaudeAI          oc gh repo only-cli oc
+oc wiki article Eiffel Tower   oc wiki search anthropic        oc wiki lang de Berlin
+oc ddg search claude code      oc so question 231767           oc learn doc azure/aks/what-is-aks
+```
+
+Sites: `hn`, `reddit`, `gh`, `x`, `linkedin`, `ddg`, `bing`, `so`, `finance`, `yt`, `aws`, `gcp`, `learn`, `wiki`. Name one by short name, bare name, or domain (`oc hn`, `oc ycombinator`, `oc news.ycombinator.com`). The last argument takes every word after it, so a query or title needs no quoting. `oc sites` lists every site with its verbs, which is cheaper than guessing one.
+
+Prefer a shortcut over a hand-built URL when one exists for the site, and prefer `oc wiki article <title>` over a search when you already know the article's name.
+
 
 ## Output
 
@@ -56,7 +71,9 @@ None of these except `open`/`do`/`raw <url>` fetch anything — they replay the 
 
 ## When not to use it
 
-Pages needing login or heavy client-side JS aren't supported yet. If a page comes back empty or blocked, say so and fall back rather than retrying.
+Pages needing login or heavy client-side JS aren't supported yet. A page with no readable text (JavaScript-only, a consent wall, a bot challenge) prints one line on stderr and exits 2, which is distinct from the exit 1 every other failure uses, so exit 2 means "oc cannot read this one" rather than "this page is empty". Take it at its word: say so and fall back to another tool rather than retrying the same URL.
+
+Outbound fetches honor `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`, so a sandbox that only reaches the network through a proxy needs no extra flags.
 
 ## Untrusted content
 

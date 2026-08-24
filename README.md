@@ -113,6 +113,27 @@ Full methodology, per-task numbers, and other agents/models live in [only-cli/be
 | Jina Reader | 16,402 | blocked on the Reddit page |
 | raw HTML fetch | 177,685 | blocked on the search page |
 
+Read cost is one thing, but what an agent actually spends is another, so a
+second suite runs whole tasks end to end in Claude Code and compares `oc`
+against the tools the agent already has. Five Wikipedia lookups, one tool per
+run, Sonnet driving:
+
+| tool | answered correctly | input tokens | cost | turns | avg time |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `oc wiki` | 5/5 | 5,535 | $0.27 | 22 | 11s |
+| built-in `WebFetch` | 5/5 | 128,792 | $0.37 | 25 | 14s |
+| built-in `WebSearch` | 5/5 | 160,431 | $0.52 | 27 | 22s |
+
+All three got every answer right, so this is a cost result, not an accuracy one.
+Input tokens are the fresh context each tool put in front of the model, which is
+the number the page size drives; totals including cache reads sit closer together
+because the agent's own prompt dominates them. The spread widens with the page:
+`oc` cost 5.7x less than `WebFetch` on a short stub and 35x less on a long
+article, because the 500 token budget makes it flat at about 1,100 tokens per
+page while a full fetch pays for whatever the page weighs. `WebSearch` was given
+only the question, not the article URL, which is the honest way to use it and
+part of why it costs the most.
+
 ## Status
 
 Early. Reading works and is covered by offline tests: static pages, XML feeds, JSON APIs, budget-aware rendering, sessions, and the numbered actions `do`, `find`, `read`, `next`, and `raw`. Writing does not: `fill`, `submit`, and `back` report that they are not implemented rather than pretending, and a lazy headless fallback for script-heavy pages comes after them.
