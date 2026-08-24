@@ -33,6 +33,8 @@ Commit messages explain why, not just what. "Cap link text at 200 chars, long ti
 
 ## Adding a site definition
 
+A definition needs no wiring: `oc <site> <verb> [args]` resolves against `clis/*.json` at runtime (see `src/sites.js`), keyed by the domain, its bare name, and any short alias listed there, so a new file is reachable and shows up in `oc sites` as soon as it lands. Add a case to `tests/sites.test.js` if the site needs a shape the existing ones do not cover.
+
 Per-site CLIs live in `clis/`, one JSON file per domain: the domain plus a `commands` map of name, help line, and URL template, exactly like the existing files. Keep it under 50 lines, no OpenAPI. If the site has a public JSON API, point the commands at that instead of the HTML pages. If your definition needs logic, it is trying to become an adapter, and the answer is to improve the generic engine instead.
 
 ## Reporting bugs

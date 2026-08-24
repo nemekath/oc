@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util';
 import { fetchPage } from './fetch.js';
 import { distill, toMarkdown, toHTML } from './distill.js';
 import { render, estimateTokens, contentTokens, contentFailure, MIN_CONTENT } from './render.js';
+import { resolveSite, listSites } from './sites.js';
 import * as act from './act.js';
 import { DEFAULT_SESSION, loadSession, saveSession, sessionFromPage } from './session.js';
 
@@ -11,6 +12,8 @@ const HELP = `only-cli: the web as a compact terminal, built for AI agents.
 usage: oc <command> [args] [flags]
 
   open <url>          fetch and render a page with numbered actions
+  <site> <verb> ...   site shortcut: 'oc hn top', 'oc reddit sub ClaudeAI'
+  sites               the site shortcuts that ship with oc
   find <query>        where a string appears on the page already open, or
                       the region itself when only one place matches
   next                the next budget worth of the page already open
@@ -75,6 +78,12 @@ const noContent = (url, detail, hint = "; 'oc raw' has the page's markdown if th
   process.exitCode = NO_CONTENT_EXIT;
 };
 
+// Anything else in the first position is tried as a site shortcut before it is
+// called unknown, so a new clis/ definition needs no change here.
+const COMMANDS = new Set([
+  'open', 'do', 'raw', 'read', 'next', 'find', 'fill', 'submit', 'back', 'session', 'sites',
+]);
+
 async function main() {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
@@ -93,10 +102,20 @@ async function main() {
   // when their own verbose mode is on, or the user exports OC_VERBOSE=1.
   const verbose = values.stats || values.verbose || process.env.OC_VERBOSE === '1';
 
-  const [command, ...args] = positionals;
+  let [command, ...args] = positionals;
   if (values.help || !command) {
     console.log(HELP);
     return;
+  }
+
+  // A first word that is not a command may still be a site oc ships a
+  // definition for, and a shortcut is only ever a URL, so it resolves to one
+  // here and the rest of this function never learns it was not typed.
+  if (!COMMANDS.has(command)) {
+    const site = resolveSite(command, args);
+    if (!site) throw new Error(`unknown command '${command}', run oc --help`);
+    args = [site.url];
+    command = 'open';
   }
 
   const sessionName = values.session || DEFAULT_SESSION;
@@ -189,6 +208,7 @@ async function main() {
     case 'fill': return act.fill(Number(args[0]), args.slice(1).join(' '));
     case 'submit': return act.submit(args[0] ? Number(args[0]) : undefined);
     case 'back': return act.back();
+    case 'sites': return console.log(listSites());
     case 'session': throw new act.NotImplemented('session');
     default:
       throw new Error(`unknown command '${command}', run oc --help`);
