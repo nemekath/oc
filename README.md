@@ -137,13 +137,13 @@ Want a website on that list? Open a pull request, or an issue naming the site; s
 
 ## Benchmarks
 
-Full methodology, per-task numbers, and other agents/models live in [only-cli/benchmarks](https://github.com/only-cli/benchmarks). The short version, measured with oc 0.4.0 on 2026-08-24 against live sites across a news front page, a Reddit discussion, a search results page, a stock quote, three cloud CLI reference pages, and more:
+Full methodology, per-task numbers, and other agents/models live in [only-cli/benchmarks](https://github.com/only-cli/benchmarks). The short version, measured with oc 0.4.0 on 2026-08-24 against live sites across a news front page, a Reddit discussion, a search results page, a stock quote, three cloud CLI reference pages, the Python, MDN, and Node.js references, and more:
 
-| method | tokens for 12 real pages | notes |
+| method | tokens for 15 real pages | notes |
 | --- | ---: | --- |
-| `oc open` | 9,487 | only method that returned real content on every page |
-| Jina Reader | 90,929 | blocked on both Reddit pages, failed the stock quote page |
-| raw HTML fetch | 1,183,149 | the stock quote page alone is 371,597 tokens |
+| `oc open` | 10,973 | only method that returned real content on every page |
+| Jina Reader | 170,505 | blocked on both Reddit pages, failed the LinkedIn page |
+| raw HTML fetch | 1,535,791 | the stock quote page alone is 375,721 tokens |
 
 Read cost is one thing, but what an agent actually spends is another, so a
 second suite runs whole tasks end to end in Claude Code and compares `oc`
