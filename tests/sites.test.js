@@ -56,7 +56,7 @@ test('every shipped definition is reachable and every url template is filled', (
       // A search verb resolves to a site root or endpoint to ask, not a
       // URL: an API endpoint keeps {query} until search time, so it is
       // filled here the way apiSearch fills it before the template check.
-      const url = resolved.url ?? resolved.sphinx
+      const url = resolved.url ?? resolved.sphinx ?? resolved.nodedoc
         ?? (def.args ?? []).reduce((u, a) => u.replaceAll(`{${a}}`, `test-${a}`), resolved.api?.api ?? '');
       assert.doesNotMatch(url, /[{}]/, `oc ${name} ${verb} left a template var in ${url}`);
       assert.equal(new URL(url).protocol, 'https:', `oc ${name} ${verb} is not https`);
@@ -89,9 +89,9 @@ test('language docs shortcuts resolve, and a doc path keeps its slashes', () => 
   assert.equal(
     resolveSite('node', ['api', 'fs']).url,
     'https://nodejs.org/api/fs.html');
-  assert.equal(
-    resolveSite('nodejs.org', ['search', 'readFile options']).url,
-    'https://html.duckduckgo.com/html/?q=site%3Anodejs.org+readFile%20options');
+  const node = resolveSite('nodejs.org', ['search', 'readFile', 'options']);
+  assert.equal(node.nodedoc, 'https://nodejs.org/api/');
+  assert.equal(node.query, 'readFile options');
   const py = resolveSite('py', ['search', 'json', 'dumps']);
   assert.equal(py.sphinx, 'https://docs.python.org/3/');
   assert.equal(py.query, 'json dumps');

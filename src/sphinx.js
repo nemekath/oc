@@ -9,18 +9,9 @@
  * printed: what reaches the agent is only the ranked result list.
  */
 
-import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
-import { fetchPage } from './fetch.js';
+import { cachedFile } from './cache.js';
 
-// A documentation set rebuilds at most a few times a day, and a stale result
-// list still links to live pages, so a day-old index is a fair trade against
-// moving ~4MB per search.
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_RESULTS = 20;
-
-const cacheDir = () => join(process.env.OC_HOME ?? join(homedir(), '.only-cli'), 'sphinx');
 
 /**
  * The index file is `Search.setIndex({...})`: JSON wrapped in one function
@@ -203,29 +194,6 @@ export function resultsToHTML(base, query, found, index) {
 }
 
 /**
- * The index for one site, from the disk cache while it is fresh and from the
- * network otherwise. A cache that cannot be written costs nothing but the
- * refetch, the same policy session state follows.
- * @param {string} base
- */
-async function loadIndex(base) {
-  const file = join(cacheDir(), `${new URL(base).host}.js`);
-  try {
-    if (Date.now() - statSync(file).mtimeMs < CACHE_TTL_MS) {
-      return { index: parseIndex(readFileSync(file, 'utf8')), via: 'cache' };
-    }
-  } catch {}
-  const { html } = await fetchPage(new URL('searchindex.js', base).href);
-  // Parse before caching, so a block page or an error never poisons the cache.
-  const index = parseIndex(html);
-  try {
-    mkdirSync(cacheDir(), { recursive: true });
-    writeFileSync(file, html);
-  } catch {}
-  return { index, via: 'network' };
-}
-
-/**
  * Search one Sphinx site. Returns the synthetic results page plus the URL the
  * session should remember: the site's human search URL, so the state reads
  * sensibly in `oc session` listings and error messages.
@@ -234,7 +202,7 @@ async function loadIndex(base) {
  */
 export async function sphinxSearch(base, query) {
   if (!query.trim()) throw new Error('usage: search <query>');
-  const { index, via } = await loadIndex(base);
+  const { data: index, via } = await cachedFile('sphinx', new URL('searchindex.js', base).href, parseIndex);
   return {
     url: new URL(`search.html?q=${encodeURIComponent(query)}`, base).href,
     html: resultsToHTML(base, query, searchIndex(index, query), index),
