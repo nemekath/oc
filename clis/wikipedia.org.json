@@ -1,0 +1,8 @@
+{
+  "domain": "wikipedia.org",
+  "commands": {
+    "article": { "open": "https://en.wikipedia.org/w/index.php?title={title}&action=render", "args": ["title"] },
+    "search": { "open": "https://en.wikipedia.org/w/index.php?search={query}&fulltext=1&ns0=1", "args": ["query"] },
+    "lang": { "open": "https://{code}.wikipedia.org/w/index.php?title={title}&action=render", "args": ["code", "title"] }
+  }
+}

@@ -24,6 +24,7 @@ const ALIASES = {
   aws: 'docs.aws.amazon.com',
   gcp: 'cloud.google.com',
   learn: 'learn.microsoft.com',
+  wiki: 'wikipedia.org',
 };
 
 /** @typedef {{open: string, args?: string[]}} Shortcut */
