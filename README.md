@@ -64,6 +64,8 @@ oc find <query>        where a string appears on the page already open, or
 oc read <n>            full text of the region at [n], up to 2000 tokens
 oc next                the next budget worth of the page already open
 oc raw [url]           distilled markdown of the whole page
+oc <site> <verb> ...   site shortcut: 'oc hn top', 'oc reddit sub ClaudeAI'
+oc sites               the site shortcuts that ship with oc
 oc fill <n> <text>     type into a numbered input               (planned)
 oc submit [n]          submit a form                            (planned)
 ```
@@ -76,23 +78,25 @@ When a page comes back with no readable text (JavaScript-only, a consent wall, a
 
 ## Supported websites
 
-Works on any mostly-static site with no per-site setup: news sites, blogs, documentation, forums, search engines. A JSON API is a page here too: `oc open` on an endpoint that answers with JSON renders one numbered item per record, keeps the fields that actually differ between items, and says once what every item shares. On top of that, `clis/` ships tuned shortcuts for:
+Works on any mostly-static site with no per-site setup: news sites, blogs, documentation, forums, search engines. A JSON API is a page here too: `oc open` on an endpoint that answers with JSON renders one numbered item per record, keeps the fields that actually differ between items, and says once what every item shares. On top of that, `clis/` ships tuned shortcuts, so `oc hn item 4711` or `oc gh repo only-cli oc` gets there without the agent knowing how that site spells its URLs. Name the site by its short name, its bare name, or its domain (`oc hn`, `oc ycombinator`, `oc news.ycombinator.com`), and `oc sites` prints the whole list with its verbs:
 
-| website | domain | shortcuts |
+| website | command | shortcuts |
 | --- | --- | --- |
-| Hacker News | news.ycombinator.com | `top`, `new`, `item <id>`, `user <name>` |
-| Reddit | reddit.com (via old.reddit.com) | `sub <name>`, `post <id>`, `user <name>`, `search <query>` |
-| GitHub | github.com | `repo <owner> <name>`, `user <name>`, `search <query>`, `trending`, `issues <owner> <name>` |
-| X | x.com | `user <name>`, `post <id>` |
-| LinkedIn | linkedin.com | `profile <name>`, `company <name>`, `jobs <query>` (public guest views) |
-| DuckDuckGo | duckduckgo.com | `search <query>`, `lite <query>` |
-| Bing | bing.com | `search <query>`, `news <query>` |
-| Stack Overflow | stackoverflow.com (via Atom feeds and the Stack Exchange API) | `search <query>`, `question <id>`, `tag <name>`, `user <id>`, `recent` |
-| Yahoo Finance | finance.yahoo.com | `quote <symbol>`, `news <symbol>`, `history <symbol>`, `lookup <query>`, `markets`, `gainers`, `losers`, `trending` |
-| YouTube | youtube.com | `video <id>`, `channel <name>` |
-| AWS docs | docs.aws.amazon.com (search via DuckDuckGo) | `guide <service> <page>`, `page <service> <guide> <page>`, `cli <command>`, `search <query>` |
-| Google Cloud docs | cloud.google.com (via docs.cloud.google.com, search via DuckDuckGo) | `docs <product>`, `page <product> <page>`, `gcloud <command>`, `search <query>` |
-| Microsoft Learn | learn.microsoft.com (search via its RSS API) | `azure <page>`, `doc <path>`, `cli <command>`, `search <query>` |
+| Hacker News | `oc hn` | `top`, `new`, `item <id>`, `user <name>` |
+| Reddit | `oc reddit` (via old.reddit.com) | `sub <name>`, `post <id>`, `user <name>`, `search <query>` |
+| GitHub | `oc gh` | `repo <owner> <name>`, `user <name>`, `search <query>`, `trending`, `issues <owner> <name>` |
+| X | `oc x` | `user <name>`, `post <id>` |
+| LinkedIn | `oc linkedin` | `profile <name>`, `company <name>`, `jobs <query>` (public guest views) |
+| DuckDuckGo | `oc ddg` | `search <query>`, `lite <query>` |
+| Bing | `oc bing` | `search <query>`, `news <query>` |
+| Stack Overflow | `oc so` (via Atom feeds and the Stack Exchange API) | `search <query>`, `question <id>`, `tag <name>`, `user <id>`, `recent` |
+| Yahoo Finance | `oc yahoo` | `quote <symbol>`, `news <symbol>`, `history <symbol>`, `lookup <query>`, `markets`, `gainers`, `losers`, `trending` |
+| YouTube | `oc yt` | `video <id>`, `channel <name>` |
+| AWS docs | `oc aws` (search via DuckDuckGo) | `guide <service> <page>`, `page <service> <guide> <page>`, `cli <command>`, `search <query>` |
+| Google Cloud docs | `oc gcp` (via docs.cloud.google.com, search via DuckDuckGo) | `docs <product>`, `page <product> <page>`, `gcloud <command>`, `search <query>` |
+| Microsoft Learn | `oc learn` (search via its RSS API) | `azure <page>`, `doc <path>`, `cli <command>`, `search <query>` |
+
+A shortcut only ever resolves to a URL and then takes the same path `oc open` does, so it changes nothing about what a page costs or how it reads. The last argument takes every word after it, so `oc ddg search claude code cli` and `oc aws search s3 lifecycle rules` need no quoting, and a path argument keeps its slashes, so `oc learn doc azure/aks/what-is-aks` reaches that page.
 
 A few of these (X, Stack Overflow, YouTube, Microsoft Learn search) read pages that look login-gated or JS-only from the outside, by finding the server-rendered HTML, feed, inline data, or public API the page already ships without a login. Stack Overflow search goes through the Stack Exchange API, and each result prints its `question_id`: read one with the `question <id>` feed rather than following its link, since the question page itself answers a bot challenge instead of the question. AWS and Google Cloud render docs search purely client-side with no feed, so their `search` goes through DuckDuckGo with a baked-in `site:` filter instead. Not supported yet: pages that only render with JavaScript, sites behind logins, and sites with hard bot challenges that expose no feed.
 
