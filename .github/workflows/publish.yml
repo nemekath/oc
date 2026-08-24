@@ -35,15 +35,16 @@ jobs:
     outputs:
       channel: ${{ steps.channel.outputs.channel }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # No registry-url here: it writes an .npmrc auth-token line with a
       # placeholder value, and npm then authenticates with that instead of
       # falling through to OIDC trusted publishing.
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-      # Trusted publishing needs npm 11.5.1 or newer.
-      - run: npm install -g npm@latest
+      # Trusted publishing needs npm 11.5.1 or newer, pinned exactly so a
+      # release never runs an npm nobody reviewed.
+      - run: npm install -g npm@12.0.2
       - run: npm ci
       - run: npm test
       - name: pick channel and version
@@ -103,7 +104,7 @@ jobs:
     if: needs.publish.outputs.channel == 'latest'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
       # Same invocation the install-loop experiment proved out, telemetry left
