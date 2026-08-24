@@ -490,13 +490,13 @@ test('a page that arrives with no readable text is reported as a failure', () =>
   };
 
   // Nothing at all, whatever the page weighed.
-  assert.match(verdict('<div id="root"></div>', 0), /~0 tokens of text on the whole page/);
+  assert.match(verdict('<div id="root"></div>', 0), /no text on the whole page/);
 
   // Menu links only: short labels are furniture, so this page has no content
   // either, however much markup came with it.
   const chrome = ['Help', 'Log in', 'Content Policy', 'About', 'Careers', 'Press']
     .map((t) => `<a href="/${t}">${t}</a>`).join('');
-  assert.match(verdict(chrome, 60_000), /~0 tokens of text on the whole page/);
+  assert.match(verdict(chrome, 60_000), /no text on the whole page/);
 
   // A consent wall or a login gate: a sentence or two of real text, out of
   // markup far too big to have carried only that.
@@ -506,6 +506,17 @@ test('a page that arrives with no readable text is reported as a failure', () =>
   // The same page without that weight behind it is a short page, not a failed
   // render, so it has to pass.
   assert.equal(verdict(gate, 0), null);
+});
+
+test('a terse page that arrived terse is content, not a failed render', () => {
+  // A status endpoint or a one-line answer distills fine and has to exit 0:
+  // calling it gated would send an agent to a browser for a page it was
+  // already holding. Only weight it never rendered is evidence of a gate.
+  const html = '<html><head><title>status</title></head><body><p>All systems operational.</p></body></html>';
+  const page = distill(html, 'https://fixture.test/status');
+  assert.equal(contentFailure(contentTokens(page), estimateTokens(html)), null);
+  const json = distill('{"status":"ok"}', 'https://fixture.test/health');
+  assert.equal(contentFailure(contentTokens(json), 4), null);
 });
 
 test('a link-list page counts as content even with no prose on it', () => {

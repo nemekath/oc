@@ -35,8 +35,9 @@ const num = (v) => v.toLocaleString('en-US');
 // which is what tells a link-list page (Hacker News, search results) from a
 // page whose only links are its own menu.
 const CONTENT_LABEL = 25;
-// Below this there is nothing to read whatever the page is, so how much markup
-// it arrived in does not matter.
+// Below this a render is suspiciously thin, but thin is only a verdict when
+// the page's own size says there should have been more. A terse page that
+// arrived terse (a status endpoint, a one-line answer) distilled fine.
 export const MIN_CONTENT = 25;
 // Below this, with markup that large behind it, the fetch worked and the render
 // did not: a real page of that weight always distills to more. A genuinely
@@ -65,7 +66,11 @@ export const contentTokens = (page) =>
  * @returns {string|null}
  */
 export function contentFailure(content, htmlTokens) {
-  if (content < MIN_CONTENT) return `~${content} tokens of text on the whole page`;
+  // Nothing extracted is empty whatever the page weighed. Anything more is
+  // only a failure with evidence: a small page that renders small is not
+  // gated, it is small, and exit 2 on it would send an agent to a browser
+  // for a page it was already holding.
+  if (content === 0) return 'no text on the whole page';
   if (content < THIN_CONTENT && htmlTokens > THIN_HTML) {
     return `~${content} tokens of text out of ~${htmlTokens} of HTML`;
   }
