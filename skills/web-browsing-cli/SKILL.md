@@ -21,7 +21,7 @@ None of these except `open`/`do`/`raw <url>` fetch anything; they replay the pag
 
 ## Site shortcuts
 
-`oc <site> <verb> [args]` resolves to a URL and then behaves exactly like `open` on it, so it costs the same and reads the same. It saves guessing a URL shape and, on a few sites, points at the feed or public API that answers without a login. Four verbs are not URLs: `oc py search <query>` ranks the Python docs' own search index locally, `oc node search <query>` does the same over the Node.js docs' JSON reference, `oc ruby search <query>` does it over the Ruby docs' RDoc index, and `oc mdn search <query>` asks MDN's own search API; all four print results as a normal numbered page.
+`oc <site> <verb> [args]` resolves to a URL and then behaves exactly like `open` on it, so it costs the same and reads the same. It saves guessing a URL shape and, on a few sites, points at the feed or public API that answers without a login. `search` on `py`, `node`, and `ruby` ranks the docs' own index locally, and on `mdn` asks the site's API; each prints a normal numbered result page.
 
 ```
 oc hn top                      oc reddit sub ClaudeAI          oc gh repo only-cli oc
