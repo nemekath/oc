@@ -52,7 +52,9 @@ test('every shipped definition is reachable and every url template is filled', (
   for (const [name, site] of sites()) {
     for (const [verb, def] of Object.entries(site.commands)) {
       const args = (def.args ?? []).map((a) => `test-${a}`);
-      const { url } = resolveSite(name, [verb, ...args]);
+      const resolved = resolveSite(name, [verb, ...args]);
+      // A sphinx-backed verb resolves to a site root to search, not a URL.
+      const url = resolved.url ?? resolved.sphinx;
       assert.doesNotMatch(url, /[{}]/, `oc ${name} ${verb} left a template var in ${url}`);
       assert.equal(new URL(url).protocol, 'https:', `oc ${name} ${verb} is not https`);
     }
@@ -87,4 +89,7 @@ test('language docs shortcuts resolve, and a doc path keeps its slashes', () => 
   assert.equal(
     resolveSite('nodejs.org', ['search', 'readFile options']).url,
     'https://html.duckduckgo.com/html/?q=site%3Anodejs.org+readFile%20options');
+  const py = resolveSite('py', ['search', 'json', 'dumps']);
+  assert.equal(py.sphinx, 'https://docs.python.org/3/');
+  assert.equal(py.query, 'json dumps');
 });

@@ -21,7 +21,7 @@ None of these except `open`/`do`/`raw <url>` fetch anything; they replay the pag
 
 ## Site shortcuts
 
-`oc <site> <verb> [args]` resolves to a URL and then behaves exactly like `open` on it, so it costs the same and reads the same. It saves guessing a URL shape and, on a few sites, points at the feed or public API that answers without a login.
+`oc <site> <verb> [args]` resolves to a URL and then behaves exactly like `open` on it, so it costs the same and reads the same. It saves guessing a URL shape and, on a few sites, points at the feed or public API that answers without a login. One verb is not a URL: `oc py search <query>` ranks the Python docs' own search index locally and prints results as a normal numbered page.
 
 ```
 oc hn top                      oc reddit sub ClaudeAI          oc gh repo only-cli oc

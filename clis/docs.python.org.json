@@ -3,6 +3,6 @@
   "commands": {
     "library": { "open": "https://docs.python.org/3/library/{module}.html", "args": ["module"] },
     "doc": { "open": "https://docs.python.org/3/{path}.html", "args": ["path"] },
-    "search": { "open": "https://html.duckduckgo.com/html/?q=site%3Adocs.python.org+{query}", "args": ["query"] }
+    "search": { "sphinx": "https://docs.python.org/3/", "args": ["query"] }
   }
 }

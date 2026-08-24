@@ -4,6 +4,7 @@ import { fetchPage } from './fetch.js';
 import { distill, toMarkdown, toHTML } from './distill.js';
 import { render, estimateTokens, contentTokens, contentFailure, MIN_CONTENT } from './render.js';
 import { resolveSite, listSites } from './sites.js';
+import { sphinxSearch } from './sphinx.js';
 import * as act from './act.js';
 import { DEFAULT_SESSION, loadSession, saveSession, sessionFromPage } from './session.js';
 
@@ -111,11 +112,17 @@ async function main() {
   // A first word that is not a command may still be a site oc ships a
   // definition for, and a shortcut is only ever a URL, so it resolves to one
   // here and the rest of this function never learns it was not typed.
+  let sphinx = null;
   if (!COMMANDS.has(command)) {
     const site = resolveSite(command, args);
     if (!site) throw new Error(`unknown command '${command}', run oc --help`);
-    args = [site.url];
-    command = 'open';
+    if (site.sphinx) {
+      sphinx = site;
+      command = 'sphinx';
+    } else {
+      args = [site.url];
+      command = 'open';
+    }
   }
 
   const sessionName = values.session || DEFAULT_SESSION;
@@ -200,6 +207,27 @@ async function main() {
         console.error(`~${stats.tokens} tokens, ${stats.rendered}/${stats.blocks} blocks rendered, ${cost}; ${resources()}`);
       }
       if (failure) noContent(finalUrl, failure);
+      return;
+    }
+    case 'sphinx': {
+      // A Sphinx site's search index is fetched (or read back from its day
+      // cache) and ranked here, then the result list rides the exact `open`
+      // path: distilled, rendered, remembered, so `do <n>` follows a result.
+      // Only the list is ever printed; the index itself stays out of context.
+      const t0 = performance.now();
+      const { url, html, via } = await sphinxSearch(sphinx.sphinx, sphinx.query);
+      const page = distill(html, url);
+      if (values.json) {
+        remember(page, sessionName);
+        console.log(JSON.stringify({ ...page, empty: false }));
+        return;
+      }
+      const { text, stats } = render(page, { budget: asked || 500 });
+      remember(page, sessionName, stats.next);
+      console.log(text);
+      if (verbose) {
+        console.error(`~${stats.tokens} tokens, search index via ${via}, ${Math.round(performance.now() - t0)}ms`);
+      }
       return;
     }
     case 'read': return console.log(act.read(Number(args[0]), { session: sessionName, budget: asked || 2000 }));
