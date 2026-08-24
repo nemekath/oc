@@ -193,8 +193,12 @@ async function main() {
         // Only the blank case here. `raw` is the fallback the compact view's
         // failure line names, so it must not fail on the same pages: a page
         // whose only text is its menu still has markup, and printing it is the
-        // whole point of `raw`.
-        if (outTokens < MIN_CONTENT) noContent(finalUrl, `~${outTokens} tokens of markdown`, '');
+        // whole point of `raw`. And a short page that arrived short is not
+        // blank, so the verdict needs the same evidence the compact view asks
+        // for: near-nothing distilled out of markup that promised more.
+        if (outTokens < MIN_CONTENT && contentFailure(outTokens, htmlTokens)) {
+          noContent(finalUrl, `~${outTokens} tokens of markdown`, '');
+        }
         return;
       }
       const page = distill(html, finalUrl);
