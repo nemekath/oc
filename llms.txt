@@ -17,7 +17,8 @@ Key facts:
 - X profiles and individual posts read without a login (about 390 and 260 tokens); X search, explore, and hashtag pages do not, and oc reports the block instead of guessing
 - Requests impersonate Chrome, so pages that block plain scripts often still work
 - Agent skill included: `npx skills add https://github.com/only-cli/oc --skill web-browsing-cli` ([skills.sh](https://www.skills.sh/only-cli/oc/web-browsing-cli))
-- No JavaScript rendering yet and no login sessions yet (both on the roadmap)
+- Authenticated pages: `oc login --cookie "..." --domain example.com [--expires 1h] [--session name]` seeds a timeboxed cookie jar; cookies are sent on every fetch for that session and live in a separate file from page state
+- No JavaScript rendering yet (on the roadmap)
 
 ## Docs
 

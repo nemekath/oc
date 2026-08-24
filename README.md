@@ -68,9 +68,25 @@ oc <site> <verb> ...   site shortcut: 'oc hn top', 'oc reddit sub ClaudeAI'
 oc sites               the site shortcuts that ship with oc
 oc fill <n> <text>     type into a numbered input               (planned)
 oc submit [n]          submit a form                            (planned)
+oc login               seed cookies for a session               (--cookie, --domain)
+oc logout [session]    clear saved cookies for a session
 ```
 
 Flags: `--budget <tokens>` (default 500), `--json`, `--html` (raw as cleaned HTML), `--session <name>`, `--verbose`/`-v` (metrics on stderr, or export `OC_VERBOSE=1`).
+
+### Authenticated sessions
+
+Pages behind a login need cookies. Seed them once per session, then browse normally:
+
+```bash
+oc login --cookie "session=...; auth=..." --domain example.com --expires 2h --session work
+oc open https://example.com/dashboard --session work
+oc logout work
+```
+
+Cookies live in a separate sidecar file (`<session>.cookies.json`) under `~/.only-cli/sessions/`, not in the page-state JSON. The default lifetime is one hour (`--expires 1h`). When cookies expire or the site returns a login page, `oc` says so plainly (exit 2) instead of distilling the login form as content.
+
+Copy the `Cookie` header from your browser's devtools (Application → Cookies, or the Network tab on a request). `--domain` is the site hostname those cookies belong to.
 
 `oc open` remembers the page it rendered in a JSON file per session under `~/.only-cli` (override with `OC_HOME`), so `oc do 3` follows `[3]` without the agent ever handling a URL. A result title on a search page is a link, so `oc do` on it opens the result rather than repeating the title. Pages longer than the budget say what they left out; `oc find`, `oc read <n>`, and `oc next` read the rest without refetching the page, and a `find` with a single match prints that region instead of the number to read it with. The budget is a target rather than a hard cap: a page that would only run a little long is printed whole rather than cut, since one extra tool call costs far more than the tokens it would have saved.
 
@@ -99,7 +115,7 @@ Works on any mostly-static site with no per-site setup: news sites, blogs, docum
 
 A shortcut only ever resolves to a URL and then takes the same path `oc open` does, so it changes nothing about what a page costs or how it reads. The last argument takes every word after it, so `oc ddg search claude code cli` and `oc aws search s3 lifecycle rules` need no quoting, and a path argument keeps its slashes, so `oc learn doc azure/aks/what-is-aks` reaches that page.
 
-A few of these (X, Stack Overflow, YouTube, Microsoft Learn search) read pages that look login-gated or JS-only from the outside, by finding the server-rendered HTML, feed, inline data, or public API the page already ships without a login. Stack Overflow search goes through the Stack Exchange API, and each result prints its `question_id`: read one with the `question <id>` feed rather than following its link, since the question page itself answers a bot challenge instead of the question. AWS and Google Cloud render docs search purely client-side with no feed, so their `search` goes through DuckDuckGo with a baked-in `site:` filter instead. Not supported yet: pages that only render with JavaScript, sites behind logins, and sites with hard bot challenges that expose no feed.
+A few of these (X, Stack Overflow, YouTube, Microsoft Learn search) read pages that look login-gated or JS-only from the outside, by finding the server-rendered HTML, feed, inline data, or public API the page already ships without a login. Stack Overflow search goes through the Stack Exchange API, and each result prints its `question_id`: read one with the `question <id>` feed rather than following its link, since the question page itself answers a bot challenge instead of the question. AWS and Google Cloud render docs search purely client-side with no feed, so their `search` goes through DuckDuckGo with a baked-in `site:` filter instead. Not supported yet: pages that only render with JavaScript and sites with hard bot challenges that expose no feed. Sites that genuinely require your account can be reached with `oc login` (bring your own cookies).
 
 Want a website on that list? Open a pull request, or an issue naming the site — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -115,9 +131,9 @@ Full methodology, per-task numbers, and other agents/models live in [only-cli/be
 
 ## Status
 
-Early. Reading works and is covered by offline tests: static pages, XML feeds, JSON APIs, budget-aware rendering, sessions, and the numbered actions `do`, `find`, `read`, `next`, and `raw`. Writing does not: `fill`, `submit`, and `back` report that they are not implemented rather than pretending, and a lazy headless fallback for script-heavy pages comes after them.
+Early. Reading works and is covered by offline tests: static pages, XML feeds, JSON APIs, budget-aware rendering, sessions, authenticated cookie jars, and the numbered actions `do`, `find`, `read`, `next`, and `raw`. Writing does not: `fill`, `submit`, and `back` report that they are not implemented rather than pretending, and a lazy headless fallback for script-heavy pages comes after them.
 
-Known limits, honestly: no JavaScript rendering yet, no sites behind logins yet, and pages behind hard bot challenges may still refuse the tool.
+Known limits, honestly: no JavaScript rendering yet, and pages behind hard bot challenges may still refuse the tool.
 
 ## Contributors
 

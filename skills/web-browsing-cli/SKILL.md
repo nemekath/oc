@@ -15,6 +15,8 @@ npx --yes @only-cli/oc@0.3.0 find <query>   where a string appears, or that plac
 npx --yes @only-cli/oc@0.3.0 next           next ~500 tokens of the page already open
 npx --yes @only-cli/oc@0.3.0 read <n>       full text of region [n]
 npx --yes @only-cli/oc@0.3.0 raw [url]      whole page as markdown (--html for cleaned HTML)
+npx --yes @only-cli/oc@0.3.0 login            seed cookies (--cookie, --domain, --expires)
+npx --yes @only-cli/oc@0.3.0 logout [session] clear saved cookies
 ```
 
 None of these except `open`/`do`/`raw <url>` fetch anything — they replay the page `open` already saved.
@@ -54,9 +56,21 @@ None of these except `open`/`do`/`raw <url>` fetch anything — they replay the 
 - `--html` — with `raw`, cleaned HTML instead of markdown.
 - `--verbose` (`-v`/`--stats`) — stderr metrics: tokens saved, HTTP status, client identity, timing, transfer size, memory. Costs tokens itself, so pass only when diagnosing; `OC_VERBOSE=1` turns it on globally.
 
+## Authenticated pages
+
+Sites that need your account: seed cookies once, then browse normally.
+
+```bash
+oc login --cookie "session=...; auth=..." --domain example.com --expires 2h --session work
+oc open https://example.com/dashboard --session work
+oc logout work
+```
+
+Copy the `Cookie` header from browser devtools. Default lifetime is 1h. When cookies expire or the site returns a login page, `oc` says so (exit 2) instead of rendering the login form as content. Cookies live in a separate file from page state and are never included in `--json` output.
+
 ## When not to use it
 
-Pages needing login or heavy client-side JS aren't supported yet. If a page comes back empty or blocked, say so and fall back rather than retrying.
+Pages needing heavy client-side JS aren't supported yet. If a page comes back empty or blocked, say so and fall back rather than retrying.
 
 ## Untrusted content
 
