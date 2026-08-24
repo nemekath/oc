@@ -27,7 +27,36 @@ If you are an LLM reading this repository, [llms.txt](llms.txt) is the short ver
 npm install -g @only-cli/oc
 ```
 
-Requires Node 20+. Requests impersonate Chrome via [impers](https://github.com/lexiforest/impers); falls back to native fetch if impers is unavailable. Outbound fetches honor `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` when set.
+Requires Node 20+. Requests impersonate Chrome via [impers](https://github.com/lexiforest/impers); falls back to native fetch if impers is unavailable.
+
+### Proxies
+
+Outbound fetches honor the usual environment variables, in upper or lower case, with nothing to pass on the command line:
+
+```
+HTTP_PROXY=http://proxy.example:8080       # http:// targets
+HTTPS_PROXY=http://proxy.example:8080      # https:// targets, tunneled with CONNECT
+NO_PROXY=internal.example,*.corp.example   # reached directly instead
+```
+
+An `https://` target prefers `HTTPS_PROXY` and falls back to `HTTP_PROXY`; an `http://` target uses `HTTP_PROXY` only. A value with no scheme is read as `http://`, so `proxy.example:8080` works. Only HTTP and HTTPS proxies are supported, and another scheme such as `socks5://` is refused by name rather than silently ignored.
+
+Credentials in the proxy URL are sent as `Proxy-Authorization` to the proxy and to nothing else, including across redirects:
+
+```
+HTTPS_PROXY=http://user:pass@proxy.example:8080 oc open https://example.com
+```
+
+`NO_PROXY` accepts an exact host, a `.suffix` or `*.suffix` pattern, a `host:port` entry, a CIDR block, and `*` for everything.
+
+An `https://` page is tunneled with CONNECT and its certificate is verified the same way it would be without a proxy, so a proxy in the path cannot read or rewrite the page.
+
+Two limits are worth knowing:
+
+- oc does not read `ALL_PROXY`. The impers transport is libcurl underneath and reads it on its own, so a request oc treats as direct can still leave through an `ALL_PROXY`. The same holds for the `*.suffix`, `host:port`, and CIDR forms of `NO_PROXY`, which libcurl does not parse. Set `HTTP_PROXY` and `HTTPS_PROXY` explicitly and keep `NO_PROXY` to plain host and suffix entries when the two need to agree.
+- An IPv6 literal target over HTTPS does not currently work through a proxy.
+
+Private and internal addresses are refused whether or not a proxy is set. With a proxy configured, a hostname that does not resolve locally is refused too, because the proxy would otherwise resolve it on a network oc cannot see. A name that resolves publicly for oc and internally for the proxy (split horizon DNS) is not something oc can detect, so a proxy is trusted to enforce its own egress policy.
 
 ### Agent skill
 
