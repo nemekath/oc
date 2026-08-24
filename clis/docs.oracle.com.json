@@ -1,0 +1,7 @@
+{
+  "domain": "docs.oracle.com",
+  "commands": {
+    "api": { "open": "https://docs.oracle.com/en/java/javase/26/docs/api/{path}.html", "args": ["path"] },
+    "search": { "open": "https://html.duckduckgo.com/html/?q=site%3Adocs.oracle.com+javase+{query}", "args": ["query"] }
+  }
+}

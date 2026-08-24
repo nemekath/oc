@@ -21,7 +21,7 @@ None of these except `open`/`do`/`raw <url>` fetch anything; they replay the pag
 
 ## Site shortcuts
 
-`oc <site> <verb> [args]` resolves to a URL and then behaves exactly like `open` on it, so it costs the same and reads the same. It saves guessing a URL shape and, on a few sites, points at the feed or public API that answers without a login. Three verbs are not URLs: `oc py search <query>` ranks the Python docs' own search index locally, `oc node search <query>` does the same over the Node.js docs' JSON reference, and `oc mdn search <query>` asks MDN's own search API; all three print results as a normal numbered page.
+`oc <site> <verb> [args]` resolves to a URL and then behaves exactly like `open` on it, so it costs the same and reads the same. It saves guessing a URL shape and, on a few sites, points at the feed or public API that answers without a login. Four verbs are not URLs: `oc py search <query>` ranks the Python docs' own search index locally, `oc node search <query>` does the same over the Node.js docs' JSON reference, `oc ruby search <query>` does it over the Ruby docs' RDoc index, and `oc mdn search <query>` asks MDN's own search API; all four print results as a normal numbered page.
 
 ```
 oc hn top                      oc reddit sub ClaudeAI          oc gh repo only-cli oc
@@ -30,7 +30,7 @@ oc ddg search claude code      oc so question 231767           oc learn doc azur
 oc py library json             oc mdn js Array/map             oc node api fs
 ```
 
-Sites: `hn`, `reddit`, `gh`, `x`, `linkedin`, `ddg`, `bing`, `so`, `finance`, `yt`, `aws`, `gcp`, `learn`, `wiki`, `py`, `mdn`, `node`. Name one by short name, bare name, or domain (`oc hn`, `oc ycombinator`, `oc news.ycombinator.com`). The last argument takes every word after it, so a query or title needs no quoting. `oc sites` lists every site with its verbs, which is cheaper than guessing one.
+Sites: `hn`, `reddit`, `gh`, `x`, `linkedin`, `ddg`, `bing`, `so`, `finance`, `yt`, `aws`, `gcp`, `learn`, `wiki`, `py`, `mdn`, `node`, `ruby`, `go`, `rust`, `java`, `php`, `cpp`, `ts`. Name one by short name, bare name, or domain (`oc hn`, `oc ycombinator`, `oc news.ycombinator.com`). The last argument takes every word after it, so a query or title needs no quoting. `oc sites` lists every site with its verbs, which is cheaper than guessing one.
 
 Prefer a shortcut over a hand-built URL when one exists for the site, and prefer `oc wiki article <title>` over a search when you already know the article's name.
 
