@@ -8,6 +8,19 @@ const { fetchPage, followRedirects, resolveProxy, proxyGet } = await import('../
 
 const BLOCKED_MESSAGE = 'blocked: private or internal URL';
 
+const PROXY_ENV_KEYS = ['HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy'];
+
+function withoutProxyEnv(run) {
+  const prev = Object.fromEntries(PROXY_ENV_KEYS.map((k) => [k, process.env[k]]));
+  for (const k of PROXY_ENV_KEYS) delete process.env[k];
+  return run().finally(() => {
+    for (const k of PROXY_ENV_KEYS) {
+      if (prev[k] === undefined) delete process.env[k];
+      else process.env[k] = prev[k];
+    }
+  });
+}
+
 test('fetchPage blocks literal loopback and RFC 1918 / link-local hosts', async () => {
   const blocked = [
     'localhost',
@@ -30,11 +43,13 @@ test('fetchPage blocks literal loopback and RFC 1918 / link-local hosts', async 
 test('fetchPage does not block an ordinary public hostname', async () => {
   // A live fetch of example.com should succeed outright, or at worst fail for
   // a network reason - it must never be rejected by the private-URL guard.
-  try {
-    await fetchPage('example.com');
-  } catch (err) {
-    assert.ok(!err.message.includes(BLOCKED_MESSAGE), `unexpected block: ${err.message}`);
-  }
+  await withoutProxyEnv(async () => {
+    try {
+      await fetchPage('example.com');
+    } catch (err) {
+      assert.ok(!err.message.includes(BLOCKED_MESSAGE), `unexpected block: ${err.message}`);
+    }
+  });
 });
 
 test('fetchPage does not false-positive on a public hostname that merely starts with a private-looking numeric label', async () => {
@@ -44,11 +59,13 @@ test('fetchPage does not false-positive on a public hostname that merely starts 
   // 10.example.com (subdomain "10" of example.com) was wrongly blocked as if
   // it were 10.0.0.0/8. Validating the resolved address instead of the
   // string fixes this.
-  try {
-    await fetchPage('10.example.com');
-  } catch (err) {
-    assert.ok(!err.message.includes(BLOCKED_MESSAGE), `unexpected block: ${err.message}`);
-  }
+  await withoutProxyEnv(async () => {
+    try {
+      await fetchPage('10.example.com');
+    } catch (err) {
+      assert.ok(!err.message.includes(BLOCKED_MESSAGE), `unexpected block: ${err.message}`);
+    }
+  });
 });
 
 test('fetchPage blocks an IPv4-mapped IPv6 loopback literal', async () => {
@@ -78,7 +95,7 @@ const replies = (...hops) => {
   return { get, asked };
 };
 
-test('every redirect hop is re-validated, not just the original URL', async () => {
+test('every redirect hop is re-validated, not just the original URL', () => withoutProxyEnv(async () => {
   // An SSRF hides the real target behind a public-looking first hop, so the
   // check has to run again on what the 302 names. This used to be proven
   // against httpbin.org, which meant a third party's uptime could fail the
@@ -87,9 +104,9 @@ test('every redirect hop is re-validated, not just the original URL', async () =
   await assert.rejects(() => followRedirects(get, 'https://public.example/start'), new RegExp(BLOCKED_MESSAGE));
   // Blocked before the socket, not after: the private address is never asked for.
   assert.deepEqual(asked, ['https://public.example/start']);
-});
+}));
 
-test('a hop to somewhere public is followed', async () => {
+test('a hop to somewhere public is followed', () => withoutProxyEnv(async () => {
   // The other half of the guarantee. A loop that rejected everything would
   // pass the test above and break every redirect on the web.
   const { get, asked } = replies(
@@ -100,12 +117,12 @@ test('a hop to somewhere public is followed', async () => {
   assert.equal(res.status, 200);
   assert.equal(url, 'https://elsewhere.example/relative');
   assert.equal(asked.length, 3);
-});
+}));
 
-test('a redirect loop gives up instead of spinning', async () => {
+test('a redirect loop gives up instead of spinning', () => withoutProxyEnv(async () => {
   const get = () => Promise.resolve({ status: 302, headers: new Map([['location', 'https://public.example/again']]) });
   await assert.rejects(() => followRedirects(get, 'https://public.example/start'), /too many redirects/);
-});
+}));
 
 test('the readable-type gate accepts text and refuses binary, on either transport', async () => {
   const { assertReadableType } = await import('../src/fetch.js');
@@ -188,21 +205,123 @@ test('resolveProxy reads the usual env vars and honors NO_PROXY', () => {
     resolveProxy('https://example.com:8443', { HTTPS_PROXY: 'http://proxy.corp:8080', NO_PROXY: 'example.com:443' }),
     'http://proxy.corp:8080',
   );
+  assert.equal(
+    resolveProxy('http://[2606:4700::1]/', { HTTP_PROXY: 'http://proxy.corp:8080', NO_PROXY: '2606:4700::1' }),
+    null,
+  );
+  assert.equal(
+    resolveProxy('http://10.0.0.5/', { HTTP_PROXY: 'http://proxy.corp:8080', NO_PROXY: '10.0.0.0/8' }),
+    null,
+  );
+  assert.equal(
+    resolveProxy('https://foo.example.com', { HTTPS_PROXY: 'http://proxy.corp:8080', NO_PROXY: '*.example.com' }),
+    null,
+  );
+  assert.equal(
+    resolveProxy('https://example.com', { HTTPS_PROXY: 'http://proxy.corp:8080', NO_PROXY: '*.example.com' }),
+    'http://proxy.corp:8080',
+  );
+});
+
+test('resolveProxy rejects a socks proxy URL', () => {
+  assert.throws(
+    () => resolveProxy('https://example.com', { HTTP_PROXY: 'socks5://127.0.0.1:1080' }),
+    /unsupported proxy protocol \(socks5\)/,
+  );
 });
 
 test('a private page URL is still blocked when a proxy is configured', async () => {
   // The proxy itself is often loopback; that must not punch a hole in the
   // page-target guard. fetchPage rejects before any socket is opened.
-  const keys = ['HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy'];
-  const prev = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
-  for (const k of keys) delete process.env[k];
+  const prev = Object.fromEntries(PROXY_ENV_KEYS.map((k) => [k, process.env[k]]));
+  for (const k of PROXY_ENV_KEYS) delete process.env[k];
   process.env.HTTP_PROXY = 'http://127.0.0.1:8080';
   process.env.HTTPS_PROXY = 'http://127.0.0.1:8080';
   try {
     await assert.rejects(() => fetchPage('127.0.0.1'), new RegExp(BLOCKED_MESSAGE));
     await assert.rejects(() => fetchPage('https://192.168.1.1/admin'), new RegExp(BLOCKED_MESSAGE));
   } finally {
-    for (const k of keys) {
+    for (const k of PROXY_ENV_KEYS) {
+      if (prev[k] === undefined) delete process.env[k];
+      else process.env[k] = prev[k];
+    }
+  }
+});
+
+test('an unresolvable hostname is blocked when a proxy is configured', async () => {
+  // Internal names are often NXDOMAIN on the client but reachable via the
+  // corporate proxy. Without this, assertSafeTarget sees [] and the proxy
+  // fetches what the guard exists to stop.
+  const prev = Object.fromEntries(PROXY_ENV_KEYS.map((k) => [k, process.env[k]]));
+  for (const k of PROXY_ENV_KEYS) delete process.env[k];
+  process.env.HTTP_PROXY = 'http://127.0.0.1:8080';
+  try {
+    await assert.rejects(
+      () => fetchPage('http://intranet.invalid/admin'),
+      new RegExp(BLOCKED_MESSAGE),
+    );
+  } finally {
+    for (const k of PROXY_ENV_KEYS) {
+      if (prev[k] === undefined) delete process.env[k];
+      else process.env[k] = prev[k];
+    }
+  }
+});
+
+test('fetchPage honors lowercase no_proxy and bypasses the proxy', async () => {
+  // Regression for the impers path: libcurl re-reads lowercase http_proxy from
+  // the environment when the proxy option is omitted. resolveProxy must stick,
+  // and impers must receive proxy: '' so curl does not override oc's decision.
+  const seen = [];
+  const proxy = http.createServer((req, res) => {
+    seen.push(req.url);
+    res.writeHead(502, { 'content-type': 'text/html' });
+    res.end('<html>via proxy</html>');
+  });
+  const port = await listen(proxy);
+  const prev = Object.fromEntries(PROXY_ENV_KEYS.map((k) => [k, process.env[k]]));
+  for (const k of PROXY_ENV_KEYS) delete process.env[k];
+  process.env.http_proxy = `http://127.0.0.1:${port}`;
+  process.env.no_proxy = '1.1.1.1';
+  try {
+    // Direct fetch may fail offline; the point is the proxy never sees the request.
+    await fetchPage('http://1.1.1.1/page').catch(() => {});
+    assert.equal(seen.length, 0);
+  } finally {
+    proxy.close();
+    for (const k of PROXY_ENV_KEYS) {
+      if (prev[k] === undefined) delete process.env[k];
+      else process.env[k] = prev[k];
+    }
+  }
+});
+
+test('fetchPage routes through HTTP_PROXY instead of connecting directly', async () => {
+  // Wiring test: resolveProxy → proxyGet/viaFetch (or impers with proxy) must
+  // actually hit the configured proxy. Unit tests for resolveProxy and proxyGet
+  // alone would still pass if this branch were deleted. A public IP literal
+  // keeps assertSafeTarget offline-friendly (no DNS lookup for the target).
+  const seen = [];
+  const proxy = http.createServer((req, res) => {
+    seen.push({ method: req.method, url: req.url, host: req.headers.host });
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end('<html><title>via fetchPage</title></html>');
+  });
+  const port = await listen(proxy);
+  const prev = Object.fromEntries(PROXY_ENV_KEYS.map((k) => [k, process.env[k]]));
+  for (const k of PROXY_ENV_KEYS) delete process.env[k];
+  process.env.HTTP_PROXY = `http://127.0.0.1:${port}`;
+  try {
+    const page = await fetchPage('http://1.1.1.1/page');
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].method, 'GET');
+    assert.equal(seen[0].url, 'http://1.1.1.1/page');
+    assert.equal(seen[0].host, '1.1.1.1');
+    assert.equal(page.html, '<html><title>via fetchPage</title></html>');
+    assert.equal(page.status, 200);
+  } finally {
+    proxy.close();
+    for (const k of PROXY_ENV_KEYS) {
       if (prev[k] === undefined) delete process.env[k];
       else process.env[k] = prev[k];
     }
@@ -244,6 +363,46 @@ test('proxyGet sends an absolute-URI GET to an HTTP proxy', async () => {
     assert.equal(seen[0].host, 'example.test');
     assert.equal(seen[0].ua, 'oc-test');
     assert.equal(seen[0].auth, `Basic ${Buffer.from('user:secret').toString('base64')}`);
+  } finally {
+    proxy.close();
+  }
+});
+
+test('proxyGet strips page URL credentials from the absolute-URI request line', async () => {
+  const seen = [];
+  const proxy = http.createServer((req, res) => {
+    seen.push(req.url);
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end('<html></html>');
+  });
+  const port = await listen(proxy);
+  try {
+    await proxyGet(
+      'http://alice:s3cr3t@example.test/private',
+      `http://127.0.0.1:${port}`,
+    );
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0], 'http://example.test/private');
+  } finally {
+    proxy.close();
+  }
+});
+
+test('proxyGet tolerates an unencoded percent in proxy credentials', async () => {
+  const seen = [];
+  const proxy = http.createServer((req, res) => {
+    seen.push({ auth: req.headers['proxy-authorization'] });
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end('<html></html>');
+  });
+  const port = await listen(proxy);
+  try {
+    await proxyGet(
+      'http://example.test/page',
+      `http://user:pa%ss@127.0.0.1:${port}`,
+      { 'user-agent': 'oc-test' },
+    );
+    assert.equal(seen[0].auth, `Basic ${Buffer.from('user:pa%ss').toString('base64')}`);
   } finally {
     proxy.close();
   }

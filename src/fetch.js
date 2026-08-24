@@ -26,6 +26,8 @@ const loadImpers = () => {
 
 const BLOCKED_MESSAGE = 'blocked: private or internal URL';
 const MAX_REDIRECTS = 20;
+// Match undici's default so proxy transport does not hang indefinitely.
+const PROXY_TIMEOUT_MS = 300_000;
 
 // What oc can turn into text: any text/* type, plus the application/* types
 // that are really text (json, xml, and the +json / +xml families a feed or an
@@ -142,7 +144,12 @@ async function assertSafeTarget(urlStr) {
     return;
   }
   if (hostname === 'localhost') throw new Error(BLOCKED_MESSAGE);
-  const addresses = await dns.lookup(hostname, { all: true }).catch(() => []);
+  const addresses = await dns.lookup(hostname, { all: true }).catch(() => {
+    // With a proxy the client never resolves the target; the proxy does, often
+    // on corporate DNS where internal names are NXDOMAIN locally. Fail closed.
+    if (resolveProxy(urlStr)) throw new Error(BLOCKED_MESSAGE);
+    return [];
+  });
   for (const { address, family } of addresses) {
     if (family === 4 && isBlockedIPv4(address)) throw new Error(BLOCKED_MESSAGE);
     if (family === 6 && isBlockedIPv6(address)) throw new Error(BLOCKED_MESSAGE);
@@ -163,8 +170,15 @@ function normalizeProxy(value) {
   return /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
 }
 
-// Split host[:port], including [IPv6]:port. A trailing :digits is a port;
-// anything else stays part of the hostname so NO_PROXY=example.com matches.
+function assertHttpProxyProtocol(proxyUrl) {
+  if (!/^https?:$/.test(proxyUrl.protocol)) {
+    throw new Error(`unsupported proxy protocol (${proxyUrl.protocol.slice(0, -1)}), oc honors HTTP and HTTPS proxies`);
+  }
+}
+
+// Split host[:port], including [IPv6]:port. Unbracketed IPv6 literals never
+// carry a port suffix (use [addr]:port); a trailing :digits on ::1 is part of
+// the address, not a port.
 function splitHostPort(entry) {
   if (entry.startsWith('[')) {
     const end = entry.indexOf(']');
@@ -172,11 +186,44 @@ function splitHostPort(entry) {
     const rest = entry.slice(end + 1);
     return { host: entry.slice(1, end), port: rest.startsWith(':') ? rest.slice(1) : '' };
   }
+  if (net.isIP(entry) === 6) return { host: entry, port: '' };
   const colon = entry.lastIndexOf(':');
   if (colon !== -1 && /^\d+$/.test(entry.slice(colon + 1))) {
-    return { host: entry.slice(0, colon), port: entry.slice(colon + 1) };
+    const host = entry.slice(0, colon);
+    if (net.isIP(host) === 6) return { host: entry, port: '' };
+    return { host, port: entry.slice(colon + 1) };
   }
   return { host: entry, port: '' };
+}
+
+function ipv4InCidr(ip, base, bits) {
+  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+  return (ipv4ToInt(ip) & mask) === (ipv4ToInt(base) & mask);
+}
+
+function ipv6InCidr(ip, base, bits) {
+  const g = expandIPv6(ip);
+  const b = expandIPv6(base);
+  if (!g || !b) return false;
+  let remaining = bits;
+  for (let i = 0; i < 8 && remaining > 0; i++) {
+    if (remaining >= 16) {
+      if (g[i] !== b[i]) return false;
+      remaining -= 16;
+    } else {
+      const mask = (0xffff << (16 - remaining)) & 0xffff;
+      if ((g[i] & mask) !== (b[i] & mask)) return false;
+      remaining = 0;
+    }
+  }
+  return true;
+}
+
+function ipInCidr(ip, base, bits) {
+  const family = net.isIP(ip);
+  if (family === 4) return ipv4InCidr(ip, base, bits);
+  if (family === 6) return ipv6InCidr(ip, base, bits);
+  return false;
 }
 
 function bypassesProxy(target, noProxy) {
@@ -190,8 +237,23 @@ function bypassesProxy(target, noProxy) {
     if (entry === '*') return true;
     const { host: rawHost, port: entryPort } = splitHostPort(entry);
     if (entryPort && entryPort !== port) continue;
-    const host = rawHost.toLowerCase().replace(/^\[|\]$/g, '').replace(/^\./, '');
+    let pattern = rawHost.toLowerCase().replace(/^\[|\]$/g, '');
+    const wildcard = pattern.startsWith('*.');
+    if (wildcard) pattern = pattern.slice(2);
+    const slash = pattern.indexOf('/');
+    if (slash !== -1 && net.isIP(pattern.slice(0, slash))) {
+      const bits = Number(pattern.slice(slash + 1));
+      if (Number.isInteger(bits) && net.isIP(hostname) && ipInCidr(hostname, pattern.slice(0, slash), bits)) {
+        return true;
+      }
+      continue;
+    }
+    const host = pattern.replace(/^\./, '');
     if (!host) continue;
+    if (wildcard) {
+      if (hostname.endsWith(`.${host}`)) return true;
+      continue;
+    }
     if (hostname === host || hostname.endsWith(`.${host}`)) return true;
   }
   return false;
@@ -212,12 +274,23 @@ export function resolveProxy(url, env = process.env) {
   const httpsProxy = envFirst(env, 'HTTPS_PROXY', 'https_proxy');
   const httpProxy = envFirst(env, 'HTTP_PROXY', 'http_proxy');
   const chosen = target.protocol === 'https:' ? (httpsProxy || httpProxy) : httpProxy;
-  return normalizeProxy(chosen);
+  const normalized = normalizeProxy(chosen);
+  if (!normalized) return null;
+  assertHttpProxyProtocol(new URL(normalized));
+  return normalized;
+}
+
+function decodeCredential(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 function proxyAuthHeader(proxy) {
   if (!proxy.username) return undefined;
-  const token = Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString('base64');
+  const token = Buffer.from(`${decodeCredential(proxy.username)}:${decodeCredential(proxy.password)}`).toString('base64');
   return `Basic ${token}`;
 }
 
@@ -260,6 +333,17 @@ function proxyPort(proxy) {
   return Number(proxy.port) || (proxy.protocol === 'https:' ? 443 : 80);
 }
 
+function armRequestTimeout(req, reject, label) {
+  req.setTimeout(PROXY_TIMEOUT_MS, () => {
+    req.destroy();
+    reject(new Error(`proxy timed out after ${PROXY_TIMEOUT_MS / 1000}s for ${label}`));
+  });
+}
+
+function pickTlsCa(tlsOpts) {
+  return tlsOpts.ca != null ? { ca: tlsOpts.ca } : {};
+}
+
 function httpViaProxy(target, proxy, headers) {
   const auth = proxyAuthHeader(proxy);
   return new Promise((resolve, reject) => {
@@ -267,13 +351,14 @@ function httpViaProxy(target, proxy, headers) {
       hostname: proxy.hostname,
       port: proxyPort(proxy),
       method: 'GET',
-      path: target.href,
+      path: `${target.protocol}//${target.host}${target.pathname}${target.search}`,
       headers: {
         ...headers,
         host: target.host,
         ...(auth && { 'proxy-authorization': auth }),
       },
     }, (res) => resolve(wrapNodeResponse(res, target.href)));
+    armRequestTimeout(req, reject, target.href);
     req.on('error', (err) => reject(new Error(`proxy failed: ${err.message} for ${target.href}`)));
     req.end();
   });
@@ -300,6 +385,7 @@ function httpsViaConnect(target, proxy, headers, tlsOpts = {}) {
         ...(auth && { 'proxy-authorization': auth }),
       },
     });
+    armRequestTimeout(req, fail, target.href);
     req.on('connect', (res, socket, head) => {
       if (res.statusCode !== 200) {
         socket.destroy();
@@ -315,7 +401,7 @@ function httpsViaConnect(target, proxy, headers, tlsOpts = {}) {
         socket,
         host: hostname,
         ...(net.isIP(hostname) ? {} : { servername: hostname }),
-        ...tlsOpts,
+        ...pickTlsCa(tlsOpts),
       }, () => {
         const tunneled = http.request({
           createConnection: () => tlsSocket,
@@ -327,6 +413,7 @@ function httpsViaConnect(target, proxy, headers, tlsOpts = {}) {
           settled = true;
           resolve(wrapNodeResponse(httpsRes, target.href));
         });
+        armRequestTimeout(tunneled, fail, target.href);
         tunneled.on('error', (err) => fail(new Error(`proxy failed: ${err.message || err.code} for ${target.href}`)));
         tunneled.end();
       });
@@ -349,9 +436,7 @@ function httpsViaConnect(target, proxy, headers, tlsOpts = {}) {
 export function proxyGet(url, proxy, headers = {}, tlsOpts = {}) {
   const target = new URL(url);
   const proxyUrl = new URL(proxy);
-  if (!/^https?:$/.test(proxyUrl.protocol)) {
-    throw new Error(`unsupported proxy protocol (${proxyUrl.protocol.slice(0, -1)}), oc honors HTTP and HTTPS proxies`);
-  }
+  assertHttpProxyProtocol(proxyUrl);
   return target.protocol === 'https:'
     ? httpsViaConnect(target, proxyUrl, headers, tlsOpts)
     : httpViaProxy(target, proxyUrl, headers);
@@ -410,10 +495,8 @@ const FETCH_HEADERS = {
 async function viaImpers(impers, target) {
   // Some sites (Reddit) 403 the chrome fingerprint but accept firefox, so a
   // blocked first attempt gets one cheap retry with a second identity.
-  const asking = (impersonate) => (url) => {
-    const proxy = resolveProxy(url);
-    return impers.get(url, { impersonate, allowRedirects: false, ...(proxy && { proxy }) });
-  };
+  const asking = (impersonate) => (url) =>
+    impers.get(url, { impersonate, allowRedirects: false, proxy: resolveProxy(url) ?? '' });
   let via = 'impers:chrome';
   let { res } = await followRedirects(asking('chrome'), target);
   let status = res.status ?? res.statusCode ?? 0;
