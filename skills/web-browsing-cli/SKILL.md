@@ -86,7 +86,7 @@ oc open https://example.com/dashboard --session work
 oc logout work
 ```
 
-Pass `--cookie -` and pipe the header in, as above: an inline `--cookie "session=..."` puts a live credential in `ps` and in shell history. Copy the header from browser devtools. `--domain` must be a real hostname — a bare TLD like `com` is refused, since the cookies would then go to every `.com` host the session fetched.
+Pass `--cookie -` and pipe the header in, as above: an inline `--cookie "session=..."` puts a live credential in `ps` and in shell history. Copy the header from browser devtools. `--domain` must be a real hostname; a bare TLD like `com` is refused, since the cookies would then go to every `.com` host the session fetched.
 
 Default lifetime is 1h. Seeded cookies are https-only: they are never sent over plain `http`, including on a redirect that downgrades, unless you seeded them with `--allow-http`. When cookies expire or the site returns a login page, `oc` says so (exit 2) instead of rendering the login form as content. Cookies live in a separate file from page state and are never included in `--json` output. `oc logout` drops that session's saved page along with its cookies.
 

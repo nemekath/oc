@@ -117,7 +117,7 @@ Prefer `--cookie -`, which reads the header from stdin. The flag also takes the 
 
 Copy the `Cookie` header from your browser's devtools (Application → Cookies, or the Network tab on a request); a leading `Cookie:` is stripped for you. `--domain` is the site hostname those cookies belong to, and it has to be a real hostname: a bare TLD like `com` is refused, because the match is a suffix match and those cookies would go to every `.com` host the session ever fetched. Cookie names and values are checked at login too, so a stray control character fails there rather than deep inside the HTTP client.
 
-Seeded cookies are https-only. They almost always come from an https browser session, so `oc` marks them secure and never sends them over plain `http` — including on a hop an `https` page redirects into, where you never typed the downgrade. A site that really is http-only needs `--allow-http` at login. Cookies a site sets over https are pinned the same way.
+Seeded cookies are https-only. They almost always come from an https browser session, so `oc` marks them secure and never sends them over plain `http`, including on a hop an `https` page redirects into, where you never typed the downgrade. A site that really is http-only needs `--allow-http` at login. Cookies a site sets over https are pinned the same way.
 
 Cookies live in a separate sidecar file (`<session>.cookies.json`) under `~/.only-cli/sessions/`, mode `0600`, not in the page-state JSON and never in `--json` output. The default lifetime is one hour (`--expires 1h`), and a jar holds at most 50 cookies so a page cannot bloat it. When cookies expire or the site returns a login page, `oc` says so plainly (exit 2) instead of distilling the login form as content.
 
