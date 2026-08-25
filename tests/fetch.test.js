@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
+import tls from 'node:tls';
 
 const { fetchPage, followRedirects, resolveProxy, proxyGet } = await import('../src/fetch.js');
 
@@ -521,7 +522,14 @@ KQFHEBF+5zD8lk8lDLuPgvz2dNGhRANCAATbolaWOjodAKqF5iwQv/FWI1mmr7o0
 
 test('an IPv6 literal target tunnels through a proxy with its brackets stripped', async () => {
   // URL.hostname keeps the brackets ("[::1]"); before the fix they reached
-  // tls.connect as a DNS name and the handshake never happened.
+  // tls.connect as a DNS name and the handshake never happened, so what this
+  // test is really about is the host oc hands to the identity check.
+  //
+  // It asserts that host directly rather than letting the handshake stand in
+  // for it: node 24.19 stopped matching IPv6 addresses in a certificate's SAN
+  // (IPv4 still matches), so the default check now rejects an ::1 origin on
+  // grounds that have nothing to do with oc, and 24.8 accepts it. Chain
+  // verification against `ca` stays on; only the hostname step is ours.
   const origin = https.createServer({ cert: LOCAL_CERT_V6, key: LOCAL_KEY_V6 }, (req, res) => {
     res.writeHead(200, { 'content-type': 'text/html' });
     res.end('<html><title>v6 tunnel</title></html>');
@@ -542,6 +550,20 @@ test('an IPv6 literal target tunnels through a proxy with its brackets stripped'
   });
   const proxyPort = await listen(proxy);
 
+  const realConnect = tls.connect;
+  let identity = null;
+  let servername = 'unset';
+  tls.connect = (opts, onSecure) => {
+    servername = opts.servername;
+    return realConnect({
+      ...opts,
+      checkServerIdentity: (host) => {
+        identity = host;
+        return undefined;
+      },
+    }, onSecure);
+  };
+
   try {
     const res = await proxyGet(
       `https://[::1]:${originPort}/page`,
@@ -549,9 +571,13 @@ test('an IPv6 literal target tunnels through a proxy with its brackets stripped'
       { 'user-agent': 'oc-test' },
       { ca: LOCAL_CERT_V6 },
     );
+    // The bare address, and no SNI: an IP literal is not a server name.
+    assert.equal(identity, '::1');
+    assert.equal(servername, undefined);
     assert.equal(res.status, 200);
     assert.equal(await res.text(), '<html><title>v6 tunnel</title></html>');
   } finally {
+    tls.connect = realConnect;
     origin.close();
     proxy.close();
   }
