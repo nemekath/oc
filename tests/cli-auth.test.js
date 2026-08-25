@@ -100,7 +100,9 @@ test('open sends the jar cookies and renders authenticated content', async () =>
   const port = await listen(proxy);
   const proxyUrl = `http://127.0.0.1:${port}`;
   try {
-    let r = oc(['login', '--cookie', 'sid=secret', '--domain', '1.1.1.1', '--session', 'authed']);
+    // --allow-http because this mock speaks plain http; without it the cookie
+    // is withheld, which is the case the next test covers.
+    let r = oc(['login', '--cookie', 'sid=secret', '--domain', '1.1.1.1', '--session', 'authed', '--allow-http']);
     assert.equal(r.status, 0, r.stderr);
 
     r = await ocAsync(['open', 'http://1.1.1.1/dashboard', '--session', 'authed'], { HTTP_PROXY: proxyUrl });
@@ -110,6 +112,118 @@ test('open sends the jar cookies and renders authenticated content', async () =>
   } finally {
     proxy.close();
   }
+});
+
+test('a seeded cookie is not sent over plain http unless the user asked for it', async () => {
+  const proxy = http.createServer((req, res) => {
+    const cookie = req.headers.cookie || '';
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end(cookie.includes('sid=secret') ? dashHtml : loginHtml);
+  });
+  const port = await listen(proxy);
+  try {
+    let r = oc(['login', '--cookie', 'sid=secret', '--domain', '1.1.1.1', '--session', 'httponly']);
+    assert.equal(r.status, 0, r.stderr);
+    const saved = JSON.parse(readFileSync(join(OC_HOME, 'sessions', 'httponly.cookies.json'), 'utf8'));
+    assert.equal(saved.cookies[0].secure, true);
+
+    r = await ocAsync(['open', 'http://1.1.1.1/dashboard', '--session', 'httponly'], {
+      HTTP_PROXY: `http://127.0.0.1:${port}`,
+    });
+    // The page came back a login form because the credential stayed home, and
+    // the warning names the flag that would have sent it.
+    assert.match(r.stderr, /https-only cookies.*--allow-http/s);
+    assert.doesNotMatch(r.stdout, /Welcome back/);
+  } finally {
+    proxy.close();
+  }
+});
+
+test('an https page that redirects to http does not carry the cookie down with it', async () => {
+  const seen = [];
+  const proxy = http.createServer((req, res) => {
+    seen.push(req.headers.cookie || '');
+    if (req.url.endsWith('/start')) {
+      res.writeHead(302, { location: 'http://1.1.1.1/landed' });
+      res.end();
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end(dashHtml);
+  });
+  const port = await listen(proxy);
+  try {
+    // Seeded over http so the first hop is reachable through the mock proxy,
+    // then pinned secure by hand: the jar is what an https login leaves behind.
+    let r = oc(['login', '--cookie', 'sid=secret', '--domain', '1.1.1.1', '--session', 'hop', '--allow-http']);
+    assert.equal(r.status, 0, r.stderr);
+    const jarPath = join(OC_HOME, 'sessions', 'hop.cookies.json');
+    const jar = JSON.parse(readFileSync(jarPath, 'utf8'));
+    jar.cookies[0].secure = true;
+    writeFileSync(jarPath, JSON.stringify(jar));
+
+    r = await ocAsync(['open', 'http://1.1.1.1/start', '--session', 'hop'], {
+      HTTP_PROXY: `http://127.0.0.1:${port}`,
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(seen.length >= 2, `expected a redirect hop, saw ${seen.length} requests`);
+    for (const cookie of seen) assert.doesNotMatch(cookie, /sid=secret/);
+  } finally {
+    proxy.close();
+  }
+});
+
+test('--cookie - reads the header from stdin instead of argv', () => {
+  const r = spawnSync(process.execPath, [bin, 'login', '--cookie', '-', '--domain', 'example.com', '--session', 'piped'], {
+    encoding: 'utf8',
+    env: childEnv(),
+    input: 'Cookie: sid=from-stdin; auth=xyz\n',
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const saved = JSON.parse(readFileSync(join(OC_HOME, 'sessions', 'piped.cookies.json'), 'utf8'));
+  assert.deepEqual(saved.cookies.map((c) => `${c.name}=${c.value}`), ['sid=from-stdin', 'auth=xyz']);
+});
+
+test('--cookie - with nothing piped in says what to pipe', () => {
+  const r = spawnSync(process.execPath, [bin, 'login', '--cookie', '-', '--domain', 'example.com'], {
+    encoding: 'utf8',
+    env: childEnv(),
+    input: '   \n',
+  });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /nothing on stdin/);
+});
+
+test('login refuses a bare TLD and a cookie carrying a control character', () => {
+  let r = oc(['login', '--cookie', 'sid=abc', '--domain', 'com', '--session', 'tld']);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /bare name/);
+  assert.ok(!existsSync(join(OC_HOME, 'sessions', 'tld.cookies.json')));
+
+  r = oc(['login', '--cookie', 'sid=a\r\nX-Injected: 1', '--domain', 'example.com', '--session', 'crlf']);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /invalid value for cookie 'sid'/);
+  assert.ok(!existsSync(join(OC_HOME, 'sessions', 'crlf.cookies.json')));
+});
+
+test('logout drops the saved page along with the cookies', () => {
+  let r = oc(['login', '--cookie', 'sid=abc', '--domain', 'example.com', '--session', 'clean']);
+  assert.equal(r.status, 0, r.stderr);
+  const jarPath = join(OC_HOME, 'sessions', 'clean.cookies.json');
+  const pagePath = join(OC_HOME, 'sessions', 'clean.json');
+  writeFileSync(pagePath, JSON.stringify({
+    url: 'https://example.com/dashboard',
+    title: 'Dashboard',
+    savedAt: new Date().toISOString(),
+    blocks: [{ type: 'text', text: 'Secret project notes for the signed-in user.' }],
+    cursor: null,
+    history: [],
+  }));
+
+  r = oc(['logout', 'clean']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!existsSync(jarPath));
+  assert.ok(!existsSync(pagePath));
 });
 
 test('open without cookies detects a login page and fails loud', async () => {

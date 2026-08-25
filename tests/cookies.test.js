@@ -18,6 +18,10 @@ const {
   purgeExpiredJars,
   isSessionExpired,
   cookieJarPath,
+  normalizeDomain,
+  withheldForScheme,
+  MAX_COOKIES,
+  MAX_COOKIE_BYTES,
   JAR_EXPIRED,
   _resetPurgeGuard,
 } = await import('../src/cookies.js');
@@ -35,6 +39,84 @@ test('jarFromCookieHeader parses a Cookie header for a domain', () => {
   assert.equal(jar.cookies[0].value, 'abc');
   assert.equal(jar.cookies[0].domain, 'example.com');
   assert.ok(Date.parse(jar.expiresAt) > Date.now());
+});
+
+test('a seeded cookie is https-only by default and travels over http only on request', () => {
+  const secure = jarFromCookieHeader('session=abc', 'example.com');
+  assert.equal(secure.cookies[0].secure, true);
+  // The credential came out of an https browser session, so plain http never
+  // sees it unless the user says the site is http-only.
+  assert.equal(cookieHeaderFor(secure, 'http://example.com/'), undefined);
+  assert.equal(cookieHeaderFor(secure, 'https://example.com/'), 'session=abc');
+  assert.ok(withheldForScheme(secure, 'http://example.com/'));
+  assert.ok(!withheldForScheme(secure, 'https://example.com/'));
+
+  const opted = jarFromCookieHeader('session=abc', 'example.com', { allowHttp: true });
+  assert.equal(opted.cookies[0].secure, undefined);
+  assert.equal(cookieHeaderFor(opted, 'http://example.com/'), 'session=abc');
+  assert.ok(!withheldForScheme(opted, 'http://example.com/'));
+});
+
+test('a cookie learned over https is pinned secure even without the attribute', () => {
+  const jar = { expiresAt: new Date(Date.now() + 3_600_000).toISOString(), cookies: [] };
+  const next = storeFromResponse(jar, 'https://example.com/', ['sid=x; Path=/']);
+  assert.equal(next.cookies[0].secure, true);
+  // Which is what keeps it off the wire when a later hop drops to http.
+  assert.equal(cookieHeaderFor(next, 'http://example.com/'), undefined);
+
+  // A cookie a site set over http was never secret to begin with; it is left alone.
+  const plain = storeFromResponse(jar, 'http://example.com/', ['sid=x; Path=/']);
+  assert.equal(plain.cookies[0].secure, undefined);
+});
+
+test('normalizeDomain refuses a bare TLD but keeps IPs and localhost', () => {
+  assert.equal(normalizeDomain('.Example.COM.'), 'example.com');
+  assert.equal(normalizeDomain('1.1.1.1'), '1.1.1.1');
+  assert.equal(normalizeDomain('localhost'), 'localhost');
+  // A suffix match on a bare TLD would hand the cookie to every host under it.
+  for (const bad of ['com', 'co', 'localdomain']) {
+    assert.throws(() => normalizeDomain(bad), /bare name/, `expected '${bad}' to be refused`);
+  }
+  for (const bad of ['', '.', '/', 'example.com:8443', 'http://example.com', 'example.com/x', 'ex ample.com', '-x.com']) {
+    assert.throws(() => normalizeDomain(bad), /must be a hostname/, `expected '${bad}' to be refused`);
+  }
+});
+
+test('a jar seeded with a bare TLD never reaches every host under it', () => {
+  assert.throws(() => jarFromCookieHeader('sid=secret', 'com'), /bare name/);
+});
+
+test('jarFromCookieHeader rejects control characters in a name or value', () => {
+  assert.throws(() => jarFromCookieHeader('sid=a\r\nX-Injected: 1', 'example.com'), /invalid value for cookie 'sid'/);
+  assert.throws(() => jarFromCookieHeader('sid=a\u0000b', 'example.com'), /invalid value for cookie/);
+  assert.throws(() => jarFromCookieHeader('sid=caf\u00e9', 'example.com'), /invalid value for cookie/);
+  assert.throws(() => jarFromCookieHeader('bad name=x', 'example.com'), /invalid cookie name/);
+  assert.throws(() => jarFromCookieHeader('sid=x'.padEnd(MAX_COOKIE_BYTES + 8, 'y'), 'example.com'), /over the .* limit/);
+  // A CR in the error message would let the rejected value rewrite the line.
+  assert.throws(() => jarFromCookieHeader('sid=a\rb', 'example.com'), (err) => !/[\r\n]/.test(err.message));
+  // Values a browser really hands over - base64 padding, commas, quotes - still pass.
+  const ok = jarFromCookieHeader('sid="a,b+c/d=="; _ga=GA1.2.3', 'example.com');
+  assert.equal(ok.cookies.length, 2);
+});
+
+test('a hostile response cannot grow the jar past its cap', () => {
+  const jar = jarFromCookieHeader('sid=secret', 'example.com');
+  const headers = Array.from({ length: MAX_COOKIES * 3 }, (_, i) => `junk${i}=x; Path=/`);
+  const next = storeFromResponse(jar, 'https://example.com/', headers);
+  assert.equal(next.cookies.length, MAX_COOKIES);
+  // The seeded login is what survives; the overflow is what is refused.
+  assert.ok(next.cookies.some((c) => c.name === 'sid' && c.value === 'secret'));
+  // A full jar still takes an update to a cookie it already holds.
+  const rotated = storeFromResponse(next, 'https://example.com/', ['junk0=rotated; Path=/']);
+  assert.equal(rotated.cookies.length, MAX_COOKIES);
+  assert.equal(rotated.cookies.find((c) => c.name === 'junk0').value, 'rotated');
+});
+
+test('a response cannot smuggle a control character into the next request', () => {
+  const jar = { expiresAt: new Date(Date.now() + 3_600_000).toISOString(), cookies: [] };
+  const next = storeFromResponse(jar, 'https://example.com/', ['sid=a\r\nX-Injected: 1; Path=/']);
+  assert.equal(next.cookies.length, 0);
+  assert.equal(parseSetCookie('sid=a\r\nb', 'https://example.com/'), null);
 });
 
 test('cookieHeaderFor matches domain and path', () => {
