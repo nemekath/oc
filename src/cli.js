@@ -1,11 +1,24 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
+import { readFileSync } from 'node:fs';
 import { fetchPage } from './fetch.js';
 import { distill, toMarkdown, toHTML } from './distill.js';
 import { render, estimateTokens, contentTokens, contentFailure, MIN_CONTENT } from './render.js';
 import { resolveSite, listSites } from './sites.js';
 import * as act from './act.js';
-import { DEFAULT_SESSION, loadSession, saveSession, sessionFromPage } from './session.js';
+import { DEFAULT_SESSION, assertSafeName, clearSession, loadSession, saveSession, sessionFromPage } from './session.js';
+import { authFailure, sessionExpiredMessage } from './auth.js';
+import {
+  loadCookieJar,
+  saveCookieJar,
+  clearCookieJar,
+  createJarHandle,
+  loginCookieJar,
+  parseExpires,
+  withheldForScheme,
+  DEFAULT_EXPIRES_MS,
+  JAR_EXPIRED,
+} from './cookies.js';
 
 const HELP = `only-cli: the web as a compact terminal, built for AI agents.
 
@@ -23,6 +36,8 @@ usage: oc <command> [args] [flags]
   fill <n> <text>     type into a numbered input               (planned)
   submit [n]          submit a form                            (planned)
   back                return to the previous page              (planned)
+  login               seed cookies for a session (--cookie, --domain)
+  logout [session]    forget a session: its cookies and its saved page
   session ls|rm       manage saved sessions                    (planned)
 
 flags:
@@ -37,6 +52,20 @@ flags:
                       memory. --stats is an alias; OC_VERBOSE=1 turns it on
                       globally. Off by default because metrics cost tokens too.
   --session <name>    keep separate page state under a name (default: default)
+  --cookie <header>   login only: the Cookie header to seed. '-' reads it from
+                      stdin, which is the form to prefer: an argv secret is
+                      visible in ps and kept in shell history
+  --domain <host>     login only: the hostname those cookies belong to
+  --expires <dur>     login only: how long the session lasts (default 1h)
+  --allow-http        login only: let these cookies travel over plain http
+
+Authenticated pages: run 'printf %s "session=..." | oc login --cookie - --domain
+example.com' to seed cookies for a session (default lifetime 1h, override with
+--expires 2h). Cookies live in a separate file from page state and are sent on
+every fetch for that session. They are marked secure, so they go over https
+only and a redirect down to http drops them; pass --allow-http at login if a
+site really is http-only. 'oc logout' forgets the session early: cookies and
+saved page both.
 
 A page that comes back with no readable text (JavaScript-only, a consent wall,
 a bot challenge) says so in one line on stderr and exits 2, so a caller can
@@ -78,10 +107,36 @@ const noContent = (url, detail, hint = "; 'oc raw' has the page's markdown if th
   process.exitCode = NO_CONTENT_EXIT;
 };
 
+const LOGIN_USAGE = 'usage: printf %s "session=..." | oc login --cookie - --domain example.com'
+  + ' [--expires 1h] [--session name] [--allow-http]';
+
+const stripCookiePrefix = (value) => String(value).trim().replace(/^cookie\s*:\s*/i, '');
+
+// The Cookie header a browser hands over is a live credential, and an argv
+// secret is readable in ps for as long as oc runs and kept in shell history
+// afterwards, so '-' reads it from stdin instead. The flag form stays, because
+// it is what an agent already has in hand, but the docs lead with the pipe.
+// Devtools' "copy as cURL"-style output carries the header name, and a strict
+// cookie-name check would only report that as a puzzling parse error, so a
+// leading 'Cookie:' is dropped here rather than refused.
+const cookieHeaderArg = (value) => {
+  if (value !== '-') return stripCookiePrefix(value);
+  if (process.stdin.isTTY) throw new Error(`--cookie - reads the header from stdin, ${LOGIN_USAGE}`);
+  let raw;
+  try {
+    raw = readFileSync(0, 'utf8');
+  } catch (err) {
+    throw new Error(`could not read the cookie header from stdin (${err.message})`);
+  }
+  const header = stripCookiePrefix(raw);
+  if (!header) throw new Error(`nothing on stdin to read a cookie header from, ${LOGIN_USAGE}`);
+  return header;
+};
+
 // Anything else in the first position is tried as a site shortcut before it is
 // called unknown, so a new clis/ definition needs no change here.
 const COMMANDS = new Set([
-  'open', 'do', 'raw', 'read', 'next', 'find', 'fill', 'submit', 'back', 'session', 'sites',
+  'open', 'do', 'raw', 'read', 'next', 'find', 'fill', 'submit', 'back', 'login', 'logout', 'session', 'sites',
 ]);
 
 async function main() {
@@ -94,6 +149,10 @@ async function main() {
       verbose: { type: 'boolean', short: 'v', default: false },
       budget: { type: 'string' },
       session: { type: 'string' },
+      cookie: { type: 'string' },
+      domain: { type: 'string' },
+      expires: { type: 'string' },
+      'allow-http': { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h', default: false },
     },
   });
@@ -118,12 +177,32 @@ async function main() {
     command = 'open';
   }
 
-  const sessionName = values.session || DEFAULT_SESSION;
+  const sessionName = assertSafeName(values.session || DEFAULT_SESSION);
   // Zero means "whatever this command's default is", which differs: the
   // compact view targets 500 tokens, read targets 2000.
   const asked = values.budget ? Number(values.budget) : 0;
   if (values.budget && (!Number.isFinite(asked) || asked <= 0)) {
     throw new Error('--budget must be a positive number');
+  }
+
+  if (command === 'login') {
+    if (!values.cookie) throw new Error(LOGIN_USAGE);
+    if (!values.domain) throw new Error('--domain is required (the site hostname your cookies belong to)');
+    const expiresMs = values.expires ? parseExpires(values.expires) : DEFAULT_EXPIRES_MS;
+    loginCookieJar(sessionName, cookieHeaderArg(values.cookie), values.domain, {
+      expiresMs,
+      allowHttp: values['allow-http'],
+    });
+    return;
+  }
+
+  if (command === 'logout') {
+    const name = args[0] ? assertSafeName(args[0]) : sessionName;
+    clearCookieJar(name);
+    // The page saved under this name can be the distilled text of a page only
+    // the cookies could reach, so logout drops it too.
+    clearSession(name);
+    return;
   }
 
   switch (command) {
@@ -148,8 +227,24 @@ async function main() {
       }
       if (!url) throw new Error(`usage: oc ${command} <url>`);
       const budget = asked || 500;
+      const jarData = loadCookieJar(sessionName);
+      // Clock-expired jars are wiped on load; say so in the same voice as a
+      // login-page redirect rather than fetching with no cookies and guessing.
+      if (jarData === JAR_EXPIRED) {
+        noContent(url, sessionExpiredMessage(url));
+        return;
+      }
+      const hadAuth = jarData != null;
+      // Secure cookies are withheld from a plain-http request. Say so, or the
+      // fetch comes back a login page and nothing explains why.
+      if (jarData && withheldForScheme(jarData, url)) {
+        console.error(`oc: warning: session '${sessionName}' holds https-only cookies, so they are not sent to ${url}`
+          + '; seed them with --allow-http if this site really is http-only');
+      }
+      const jar = jarData ? createJarHandle(sessionName, jarData) : null;
       const t0 = performance.now();
-      const { url: finalUrl, html, status, via } = await fetchPage(url);
+      const { url: finalUrl, html, status, via } = await fetchPage(url, { jar: jar ?? undefined });
+      if (jar) saveCookieJar(sessionName, jar.toJSON());
       const fetchMs = performance.now() - t0;
       const resources = () => {
         const processMs = performance.now() - t0 - fetchMs;
@@ -160,16 +255,29 @@ async function main() {
       const htmlTokens = estimateTokens(html);
       if (values.json) {
         const page = distill(html, finalUrl);
-        remember(page, sessionName);
-        const failure = contentFailure(contentTokens(page), htmlTokens);
+        const auth = authFailure(page, finalUrl, { hadAuth });
+        const failure = auth ?? contentFailure(contentTokens(page), htmlTokens);
         // Always present, so a caller can branch on the field rather than on
         // whether a field it was hoping for turned up.
         console.log(JSON.stringify({ ...page, empty: failure != null }));
         if (verbose) console.error(resources());
+        if (auth) {
+          if (jar) clearCookieJar(sessionName);
+          noContent(finalUrl, auth);
+          return;
+        }
+        remember(page, sessionName);
         if (failure) noContent(finalUrl, failure);
         return;
       }
       if (command === 'raw') {
+        const page = distill(html, finalUrl);
+        const auth = authFailure(page, finalUrl, { hadAuth });
+        if (auth) {
+          if (jar) clearCookieJar(sessionName);
+          noContent(finalUrl, auth);
+          return;
+        }
         const out = values.html ? toHTML(html, finalUrl) : toMarkdown(html, finalUrl);
         const outTokens = estimateTokens(out);
         console.log(out);
@@ -191,7 +299,13 @@ async function main() {
         return;
       }
       const page = distill(html, finalUrl);
-      const failure = contentFailure(contentTokens(page), htmlTokens);
+      const auth = authFailure(page, finalUrl, { hadAuth });
+      const failure = auth ?? contentFailure(contentTokens(page), htmlTokens);
+      if (auth) {
+        if (jar) clearCookieJar(sessionName);
+        noContent(finalUrl, auth);
+        return;
+      }
       const { text, stats } = render(page, { budget });
       remember(page, sessionName, stats.next);
       console.log(text);
