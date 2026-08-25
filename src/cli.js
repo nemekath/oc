@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
+import { readFileSync } from 'node:fs';
 import { fetchPage } from './fetch.js';
 import { distill, toMarkdown, toHTML } from './distill.js';
 import { render, estimateTokens, contentTokens, contentFailure, MIN_CONTENT } from './render.js';
 import { resolveSite, listSites } from './sites.js';
 import * as act from './act.js';
-import { DEFAULT_SESSION, assertSafeName, loadSession, saveSession, sessionFromPage } from './session.js';
+import { DEFAULT_SESSION, assertSafeName, clearSession, loadSession, saveSession, sessionFromPage } from './session.js';
 import { authFailure, sessionExpiredMessage } from './auth.js';
 import {
   loadCookieJar,
@@ -14,6 +15,7 @@ import {
   createJarHandle,
   loginCookieJar,
   parseExpires,
+  withheldForScheme,
   DEFAULT_EXPIRES_MS,
   JAR_EXPIRED,
 } from './cookies.js';
@@ -35,7 +37,7 @@ usage: oc <command> [args] [flags]
   submit [n]          submit a form                            (planned)
   back                return to the previous page              (planned)
   login               seed cookies for a session (--cookie, --domain)
-  logout [session]    clear saved cookies for a session
+  logout [session]    forget a session: its cookies and its saved page
   session ls|rm       manage saved sessions                    (planned)
 
 flags:
@@ -50,11 +52,20 @@ flags:
                       memory. --stats is an alias; OC_VERBOSE=1 turns it on
                       globally. Off by default because metrics cost tokens too.
   --session <name>    keep separate page state under a name (default: default)
+  --cookie <header>   login only: the Cookie header to seed. '-' reads it from
+                      stdin, which is the form to prefer: an argv secret is
+                      visible in ps and kept in shell history
+  --domain <host>     login only: the hostname those cookies belong to
+  --expires <dur>     login only: how long the session lasts (default 1h)
+  --allow-http        login only: let these cookies travel over plain http
 
-Authenticated pages: run 'oc login --cookie "..." --domain example.com' to seed
-cookies for a session (default lifetime 1h, override with --expires 2h). Cookies
-live in a separate file from page state and are sent on every fetch for that
-session. 'oc logout' clears them early.
+Authenticated pages: run 'printf %s "session=..." | oc login --cookie - --domain
+example.com' to seed cookies for a session (default lifetime 1h, override with
+--expires 2h). Cookies live in a separate file from page state and are sent on
+every fetch for that session. They are marked secure, so they go over https
+only and a redirect down to http drops them; pass --allow-http at login if a
+site really is http-only. 'oc logout' forgets the session early: cookies and
+saved page both.
 
 A page that comes back with no readable text (JavaScript-only, a consent wall,
 a bot challenge) says so in one line on stderr and exits 2, so a caller can
@@ -96,6 +107,32 @@ const noContent = (url, detail, hint = "; 'oc raw' has the page's markdown if th
   process.exitCode = NO_CONTENT_EXIT;
 };
 
+const LOGIN_USAGE = 'usage: printf %s "session=..." | oc login --cookie - --domain example.com'
+  + ' [--expires 1h] [--session name] [--allow-http]';
+
+const stripCookiePrefix = (value) => String(value).trim().replace(/^cookie\s*:\s*/i, '');
+
+// The Cookie header a browser hands over is a live credential, and an argv
+// secret is readable in ps for as long as oc runs and kept in shell history
+// afterwards, so '-' reads it from stdin instead. The flag form stays, because
+// it is what an agent already has in hand, but the docs lead with the pipe.
+// Devtools' "copy as cURL"-style output carries the header name, and a strict
+// cookie-name check would only report that as a puzzling parse error, so a
+// leading 'Cookie:' is dropped here rather than refused.
+const cookieHeaderArg = (value) => {
+  if (value !== '-') return stripCookiePrefix(value);
+  if (process.stdin.isTTY) throw new Error(`--cookie - reads the header from stdin, ${LOGIN_USAGE}`);
+  let raw;
+  try {
+    raw = readFileSync(0, 'utf8');
+  } catch (err) {
+    throw new Error(`could not read the cookie header from stdin (${err.message})`);
+  }
+  const header = stripCookiePrefix(raw);
+  if (!header) throw new Error(`nothing on stdin to read a cookie header from, ${LOGIN_USAGE}`);
+  return header;
+};
+
 // Anything else in the first position is tried as a site shortcut before it is
 // called unknown, so a new clis/ definition needs no change here.
 const COMMANDS = new Set([
@@ -115,6 +152,7 @@ async function main() {
       cookie: { type: 'string' },
       domain: { type: 'string' },
       expires: { type: 'string' },
+      'allow-http': { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h', default: false },
     },
   });
@@ -148,16 +186,22 @@ async function main() {
   }
 
   if (command === 'login') {
-    if (!values.cookie) throw new Error("usage: oc login --cookie \"...\" --domain example.com [--expires 1h] [--session name]");
+    if (!values.cookie) throw new Error(LOGIN_USAGE);
     if (!values.domain) throw new Error('--domain is required (the site hostname your cookies belong to)');
     const expiresMs = values.expires ? parseExpires(values.expires) : DEFAULT_EXPIRES_MS;
-    loginCookieJar(sessionName, values.cookie, values.domain, { expiresMs });
+    loginCookieJar(sessionName, cookieHeaderArg(values.cookie), values.domain, {
+      expiresMs,
+      allowHttp: values['allow-http'],
+    });
     return;
   }
 
   if (command === 'logout') {
     const name = args[0] ? assertSafeName(args[0]) : sessionName;
     clearCookieJar(name);
+    // The page saved under this name can be the distilled text of a page only
+    // the cookies could reach, so logout drops it too.
+    clearSession(name);
     return;
   }
 
@@ -191,6 +235,12 @@ async function main() {
         return;
       }
       const hadAuth = jarData != null;
+      // Secure cookies are withheld from a plain-http request. Say so, or the
+      // fetch comes back a login page and nothing explains why.
+      if (jarData && withheldForScheme(jarData, url)) {
+        console.error(`oc: warning: session '${sessionName}' holds https-only cookies, so they are not sent to ${url}`
+          + '; seed them with --allow-http if this site really is http-only');
+      }
       const jar = jarData ? createJarHandle(sessionName, jarData) : null;
       const t0 = performance.now();
       const { url: finalUrl, html, status, via } = await fetchPage(url, { jar: jar ?? undefined });

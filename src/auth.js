@@ -42,5 +42,5 @@ export function authFailure(page, url, { hadAuth = false } = {}) {
   if (!loginUrl && !loginTitle && !loginButton) return null;
 
   if (hadAuth) return sessionExpiredMessage(url);
-  return 'this page requires login; run \'oc login --cookie "..." --domain example.com\'';
+  return 'this page requires login; run \'printf %s "session=..." | oc login --cookie - --domain example.com\'';
 }

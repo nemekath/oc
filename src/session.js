@@ -12,7 +12,7 @@
 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, chmodSync, unlinkSync } from 'node:fs';
 
 export const DEFAULT_SESSION = 'default';
 
@@ -161,6 +161,21 @@ export function saveSession(name, state) {
   const path = sessionPath(name);
   writeFileSync(path, JSON.stringify(state), { mode: 0o600 });
   chmodSync(path, 0o600);
+}
+
+/**
+ * Drop a saved page. `oc logout` calls this alongside clearing the cookie jar:
+ * a snapshot taken under a login holds that page's text, so leaving it behind
+ * would make logout mean "the cookies are gone" rather than "nothing of this
+ * login remains".
+ * @param {string} name
+ */
+export function clearSession(name) {
+  try {
+    unlinkSync(sessionPath(name));
+  } catch {
+    // nothing saved under that name is fine
+  }
 }
 
 /**
