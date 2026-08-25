@@ -3,8 +3,9 @@
  * JSON. Credentials never live in the session snapshot itself.
  */
 
+import net from 'node:net';
 import { join } from 'node:path';
-import { mkdirSync, readFileSync, writeFileSync, unlinkSync, readdirSync, statSync, chmodSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, unlinkSync, readdirSync, chmodSync } from 'node:fs';
 
 import { sessionDir, assertSafeName } from './session.js';
 
@@ -12,10 +13,40 @@ const DEFAULT_EXPIRES_MS = 60 * 60 * 1000; // 1h
 export { DEFAULT_EXPIRES_MS };
 const FILE_MODE = 0o600;
 
+// A jar is one login's worth of cookies, not a browser profile. The cap is
+// what stops a hostile page from growing the sidecar without bound through
+// Set-Cookie, and 4KB per cookie is the ceiling browsers already enforce.
+export const MAX_COOKIES = 50;
+export const MAX_COOKIE_BYTES = 4096;
+
+// RFC 6265 cookie-name is an RFC 7230 token. Real cookie names are always one.
+const COOKIE_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+// RFC 6265's cookie-value is stricter than this - no space, comma, quote, or
+// backslash - but real browser cookies carry all four, so a strict rule would
+// reject headers a user correctly copied out of devtools. "Printable ASCII, no
+// semicolon" keeps those and still rejects CR, LF, NUL, and every other
+// control character, which is all a header-injection attempt has to work with.
+const COOKIE_VALUE = /^[\x20-\x3A\x3C-\x7E]*$/;
+
+// Hostnames only: no scheme, port, path, userinfo, or IPv6 literal.
+const HOSTNAME = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/;
+
 /** Returned by loadCookieJar when a sidecar existed but its session ceiling had passed. */
 export const JAR_EXPIRED = Object.freeze({ expired: true });
 
 let purged = false;
+
+/**
+ * A user-supplied string as it can safely appear in an error message: control
+ * characters escaped so a CR cannot rewrite the line, and clipped so a huge
+ * value does not become the error.
+ * @param {unknown} value
+ * @returns {string}
+ */
+function clip(value) {
+  const s = String(value).replace(/[\x00-\x1f\x7f]/g, (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`);
+  return s.length > 40 ? `${s.slice(0, 40)}...` : s;
+}
 
 /**
  * @param {string} name
@@ -40,6 +71,68 @@ export function parseExpires(value) {
 }
 
 /**
+ * The hostname a jar is scoped to.
+ *
+ * domainMatches is a suffix match, so the value here decides how far the
+ * cookies reach: '--domain com' would hand them to every .com host the session
+ * ever fetches. --domain is trusted input, but the caller is often an agent and
+ * the failure mode is silent credential spray, so a bare name is refused. The
+ * rule needs no Public Suffix List: at least one dot, unless the value is an IP
+ * literal or localhost. It does not catch multi-label public suffixes
+ * ('--domain co.uk' still passes); a PSL is the only thing that would, and it
+ * is a dependency this project will not take.
+ * @param {string} domain
+ * @returns {string} the lowercased, dot-stripped hostname
+ */
+export function normalizeDomain(domain) {
+  const host = String(domain ?? '').trim().toLowerCase().replace(/^\./, '').replace(/\.$/, '');
+  if (!host || !HOSTNAME.test(host)) {
+    throw new Error(`--domain must be a hostname like example.com (got '${clip(domain)}')`);
+  }
+  if (net.isIP(host) || host === 'localhost') return host;
+  if (!host.includes('.')) {
+    throw new Error(
+      `--domain '${host}' is a bare name, so these cookies would be sent to every host under it; `
+      + 'use the full hostname they belong to, like example.com',
+    );
+  }
+  return host;
+}
+
+/**
+ * @param {string} name
+ * @param {string} value
+ * @returns {boolean}
+ */
+function isValidCookie(name, value) {
+  return COOKIE_NAME.test(name)
+    && COOKIE_VALUE.test(value)
+    && Buffer.byteLength(name) + Buffer.byteLength(value) <= MAX_COOKIE_BYTES;
+}
+
+/**
+ * Fail at `oc login` rather than deep inside a transport. A CR or LF in a
+ * seeded cookie surfaces later as node's own header-validation error, which
+ * says nothing about which cookie is wrong, and whatever curl does with it
+ * through impers is a separate question this closes off for both transports.
+ * @param {string} name
+ * @param {string} value
+ */
+function assertValidCookie(name, value) {
+  if (!COOKIE_NAME.test(name)) {
+    throw new Error(`invalid cookie name '${clip(name)}', names are letters, digits, and !#$%&'*+-.^_\`|~`);
+  }
+  if (!COOKIE_VALUE.test(value)) {
+    throw new Error(
+      `invalid value for cookie '${clip(name)}', cookie values cannot hold control characters or non-ASCII bytes`,
+    );
+  }
+  if (Buffer.byteLength(name) + Buffer.byteLength(value) > MAX_COOKIE_BYTES) {
+    throw new Error(`cookie '${clip(name)}' is over the ${MAX_COOKIE_BYTES}-byte limit`);
+  }
+}
+
+/**
  * @typedef {Object} Cookie
  * @property {string} name
  * @property {string} value
@@ -58,19 +151,22 @@ export function parseExpires(value) {
 
 /**
  * Seed a jar from a Cookie request header string.
+ *
+ * Seeded cookies are marked secure unless the caller opts out: they were
+ * almost certainly copied out of an https browser session, and cookieHeaderFor
+ * withholds a secure cookie from a plain-http request, so the default is that
+ * they never travel in cleartext - including on an https page that 302s to
+ * http, where the user never typed the downgrade.
  * @param {string} header
  * @param {string} domain
- * @param {{ expiresMs?: number }} [opts]
+ * @param {{ expiresMs?: number, allowHttp?: boolean }} [opts]
  * @returns {CookieJar}
  */
-export function jarFromCookieHeader(header, domain, { expiresMs = DEFAULT_EXPIRES_MS } = {}) {
-  const host = domain.toLowerCase().replace(/^\./, '');
-  if (!host || host.includes('/') || host.includes(':')) {
-    throw new Error('--domain must be a hostname like example.com');
-  }
+export function jarFromCookieHeader(header, domain, { expiresMs = DEFAULT_EXPIRES_MS, allowHttp = false } = {}) {
+  const host = normalizeDomain(domain);
   /** @type {Cookie[]} */
   const cookies = [];
-  for (const part of header.split(';')) {
+  for (const part of String(header ?? '').split(';')) {
     const trimmed = part.trim();
     if (!trimmed) continue;
     const eq = trimmed.indexOf('=');
@@ -78,9 +174,13 @@ export function jarFromCookieHeader(header, domain, { expiresMs = DEFAULT_EXPIRE
     const name = trimmed.slice(0, eq).trim();
     const value = trimmed.slice(eq + 1).trim();
     if (!name) continue;
-    cookies.push({ name, value, domain: host, path: '/' });
+    assertValidCookie(name, value);
+    cookies.push({ name, value, domain: host, path: '/', ...(allowHttp ? {} : { secure: true }) });
   }
   if (!cookies.length) throw new Error('no cookies found in --cookie string');
+  if (cookies.length > MAX_COOKIES) {
+    throw new Error(`--cookie holds ${cookies.length} cookies, more than the ${MAX_COOKIES} a session keeps`);
+  }
   return {
     expiresAt: new Date(Date.now() + expiresMs).toISOString(),
     cookies,
@@ -231,6 +331,16 @@ function pathMatches(cookie, path) {
 }
 
 /**
+ * @param {Cookie} cookie
+ * @param {CookieJar} jar
+ * @param {string} host
+ * @param {string} path
+ */
+function scopeMatches(cookie, jar, host, path) {
+  return !isCookieExpired(cookie, jar.expiresAt) && domainMatches(cookie, host) && pathMatches(cookie, path);
+}
+
+/**
  * Cookies to send for a request URL.
  * @param {CookieJar} jar
  * @param {string} urlStr
@@ -247,12 +357,33 @@ export function cookieHeaderFor(jar, urlStr) {
   const path = url.pathname || '/';
   const secure = url.protocol === 'https:';
   const active = jar.cookies.filter((c) => {
-    if (isCookieExpired(c, jar.expiresAt)) return false;
     if (c.secure && !secure) return false;
-    return domainMatches(c, host) && pathMatches(c, path);
+    return scopeMatches(c, jar, host, path);
   });
   if (!active.length) return undefined;
   return active.map((c) => `${c.name}=${c.value}`).join('; ');
+}
+
+/**
+ * Whether this URL would have received cookies but for its scheme. The CLI
+ * uses it to name --allow-http, rather than fetching without credentials and
+ * leaving the caller to wonder why an authenticated page came back a login
+ * form.
+ * @param {CookieJar} jar
+ * @param {string} urlStr
+ * @returns {boolean}
+ */
+export function withheldForScheme(jar, urlStr) {
+  let url;
+  try {
+    url = new URL(urlStr);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'http:') return false;
+  const host = url.hostname.toLowerCase();
+  const path = url.pathname || '/';
+  return jar.cookies.some((c) => c.secure && scopeMatches(c, jar, host, path));
 }
 
 /**
@@ -269,6 +400,11 @@ export function parseSetCookie(header, requestUrl) {
   const name = parts[0].slice(0, eq).trim();
   const value = parts[0].slice(eq + 1).trim();
   if (!name) return null;
+  // A response is untrusted input, and whatever it sets here is echoed back in
+  // the Cookie header of the next request, so it faces the same rule a seeded
+  // cookie does. Dropped silently: a page setting a junk cookie is the page's
+  // problem, not a reason to fail the render.
+  if (!isValidCookie(name, value)) return null;
 
   const url = new URL(requestUrl);
   /** @type {Cookie} */
@@ -277,6 +413,10 @@ export function parseSetCookie(header, requestUrl) {
     value,
     domain: url.hostname.toLowerCase(),
     path: '/',
+    // A cookie learned over https is pinned secure whether or not the response
+    // said so, so a later hop to http - a redirect, or a link the agent
+    // follows - cannot carry it in cleartext.
+    ...(url.protocol === 'https:' ? { secure: true } : {}),
   };
 
   for (const attr of parts.slice(1)) {
@@ -288,7 +428,7 @@ export function parseSetCookie(header, requestUrl) {
     // safely needs the Public Suffix List (a site could otherwise scope a
     // cookie to '.com' and have it sent to every site under it), and a PSL is a
     // dependency this project will not take. User-seeded cookies still scope by
-    // the --domain they pass, which is trusted input.
+    // the --domain they pass, which normalizeDomain holds to the same floor.
     if (key === 'path') {
       cookie.path = val || '/';
     } else if (key === 'secure') {
@@ -343,6 +483,10 @@ export function storeFromResponse(jar, url, setCookieHeaders) {
       continue;
     }
     cookies = cookies.filter((c) => !(c.name === parsed.name && domainMatches(c, parsed.domain)));
+    // Replacing a cookie the jar already holds is always allowed; growing past
+    // the cap is not, so a page cannot bloat the sidecar with fresh names. The
+    // cookies already there - the seeded login among them - are what survive.
+    if (cookies.length >= MAX_COOKIES) continue;
     if (parsed.expires) {
       const ceiling = Date.parse(jar.expiresAt);
       const exp = Date.parse(parsed.expires);
@@ -378,7 +522,7 @@ export function createJarHandle(sessionName, data) {
  * @param {string} name
  * @param {string} header
  * @param {string} domain
- * @param {{ expiresMs?: number }} [opts]
+ * @param {{ expiresMs?: number, allowHttp?: boolean }} [opts]
  */
 export function loginCookieJar(name, header, domain, opts) {
   const jar = jarFromCookieHeader(header, domain, opts);
