@@ -98,7 +98,7 @@ oc sites               the site shortcuts that ship with oc
 oc fill <n> <text>     type into a numbered input               (planned)
 oc submit [n]          submit a form                            (planned)
 oc login               seed cookies for a session               (--cookie, --domain)
-oc logout [session]    clear saved cookies for a session
+oc logout [session]    forget a session: cookies and saved page
 ```
 
 Flags: `--budget <tokens>` (default 500), `--json`, `--html` (raw as cleaned HTML), `--session <name>`, `--verbose`/`-v` (metrics on stderr, or export `OC_VERBOSE=1`).
@@ -108,14 +108,20 @@ Flags: `--budget <tokens>` (default 500), `--json`, `--html` (raw as cleaned HTM
 Pages behind a login need cookies. Seed them once per session, then browse normally:
 
 ```bash
-oc login --cookie "session=...; auth=..." --domain example.com --expires 2h --session work
+printf %s "session=...; auth=..." | oc login --cookie - --domain example.com --expires 2h --session work
 oc open https://example.com/dashboard --session work
 oc logout work
 ```
 
-Cookies live in a separate sidecar file (`<session>.cookies.json`) under `~/.only-cli/sessions/`, not in the page-state JSON. The default lifetime is one hour (`--expires 1h`). When cookies expire or the site returns a login page, `oc` says so plainly (exit 2) instead of distilling the login form as content.
+Prefer `--cookie -`, which reads the header from stdin. The flag also takes the header inline (`--cookie "session=..."`), but an argument is a live credential in `ps` for as long as `oc` runs and in your shell history afterwards.
 
-Copy the `Cookie` header from your browser's devtools (Application → Cookies, or the Network tab on a request). `--domain` is the site hostname those cookies belong to.
+Copy the `Cookie` header from your browser's devtools (Application → Cookies, or the Network tab on a request); a leading `Cookie:` is stripped for you. `--domain` is the site hostname those cookies belong to, and it has to be a real hostname: a bare TLD like `com` is refused, because the match is a suffix match and those cookies would go to every `.com` host the session ever fetched. Cookie names and values are checked at login too, so a stray control character fails there rather than deep inside the HTTP client.
+
+Seeded cookies are https-only. They almost always come from an https browser session, so `oc` marks them secure and never sends them over plain `http` — including on a hop an `https` page redirects into, where you never typed the downgrade. A site that really is http-only needs `--allow-http` at login. Cookies a site sets over https are pinned the same way.
+
+Cookies live in a separate sidecar file (`<session>.cookies.json`) under `~/.only-cli/sessions/`, mode `0600`, not in the page-state JSON and never in `--json` output. The default lifetime is one hour (`--expires 1h`), and a jar holds at most 50 cookies so a page cannot bloat it. When cookies expire or the site returns a login page, `oc` says so plainly (exit 2) instead of distilling the login form as content.
+
+`oc logout` forgets the whole session, not just its cookies: a page saved under that name can hold the distilled text of something only the login could reach, so the snapshot goes with the jar.
 
 `oc open` remembers the page it rendered in a JSON file per session under `~/.only-cli` (override with `OC_HOME`), so `oc do 3` follows `[3]` without the agent ever handling a URL. A result title on a search page is a link, so `oc do` on it opens the result rather than repeating the title. Pages longer than the budget say what they left out; `oc find`, `oc read <n>`, and `oc next` read the rest without refetching the page, and a `find` with a single match prints that region instead of the number to read it with. The budget is a target rather than a hard cap: a page that would only run a little long is printed whole rather than cut, since one extra tool call costs far more than the tokens it would have saved.
 

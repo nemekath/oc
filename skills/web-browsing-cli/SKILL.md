@@ -16,7 +16,7 @@ npx --yes @only-cli/oc@0.4.0 next           next ~500 tokens of the page already
 npx --yes @only-cli/oc@0.4.0 read <n>       full text of region [n]
 npx --yes @only-cli/oc@0.4.0 raw [url]      whole page as markdown (--html for cleaned HTML)
 npx --yes @only-cli/oc@0.4.0 login            seed cookies (--cookie, --domain, --expires)
-npx --yes @only-cli/oc@0.4.0 logout [session] clear saved cookies
+npx --yes @only-cli/oc@0.4.0 logout [session] forget a session: cookies and saved page
 ```
 
 None of these except `open`/`do`/`raw <url>` fetch anything; they replay the page `open` already saved.
@@ -80,12 +80,14 @@ Prefer a shortcut over a hand-built URL when one exists for the site, and prefer
 Sites that need your account: seed cookies once, then browse normally.
 
 ```bash
-oc login --cookie "session=...; auth=..." --domain example.com --expires 2h --session work
+printf %s "session=...; auth=..." | oc login --cookie - --domain example.com --expires 2h --session work
 oc open https://example.com/dashboard --session work
 oc logout work
 ```
 
-Copy the `Cookie` header from browser devtools. Default lifetime is 1h. When cookies expire or the site returns a login page, `oc` says so (exit 2) instead of rendering the login form as content. Cookies live in a separate file from page state and are never included in `--json` output.
+Pass `--cookie -` and pipe the header in, as above: an inline `--cookie "session=..."` puts a live credential in `ps` and in shell history. Copy the header from browser devtools. `--domain` must be a real hostname — a bare TLD like `com` is refused, since the cookies would then go to every `.com` host the session fetched.
+
+Default lifetime is 1h. Seeded cookies are https-only: they are never sent over plain `http`, including on a redirect that downgrades, unless you seeded them with `--allow-http`. When cookies expire or the site returns a login page, `oc` says so (exit 2) instead of rendering the login form as content. Cookies live in a separate file from page state and are never included in `--json` output. `oc logout` drops that session's saved page along with its cookies.
 
 ## When not to use it
 
