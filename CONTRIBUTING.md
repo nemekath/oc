@@ -23,7 +23,7 @@ Node 20+. Tests run fully offline against saved fixtures in `tests/pages/`, so a
 
 ## Code style
 
-Plain JavaScript, ESM, JSDoc types, no build step. Match the code around you. Comments explain constraints and trade-offs, not what the next line does; if a comment restates the code, delete it. Small functions, few files: if you are adding a new file to `src/`, pause and check whether the logic belongs in one of the six that exist.
+Plain JavaScript, ESM, JSDoc types, no build step. Match the code around you. Comments explain constraints and trade-offs, not what the next line does; if a comment restates the code, delete it. Small functions, few files: if you are adding a new file to `src/`, pause and check whether the logic belongs in one of the files that already exist.
 
 ## Writing style
 
@@ -36,6 +36,15 @@ Commit messages explain why, not just what. "Cap link text at 200 chars, long ti
 A definition needs no wiring: `oc <site> <verb> [args]` resolves against `clis/*.json` at runtime (see `src/sites.js`), keyed by the domain, its bare name, and any short alias listed there, so a new file is reachable and shows up in `oc sites` as soon as it lands. Add a case to `tests/sites.test.js` if the site needs a shape the existing ones do not cover.
 
 Per-site CLIs live in `clis/`, one JSON file per domain: the domain plus a `commands` map of name, help line, and URL template, exactly like the existing files. Keep it under 50 lines, no OpenAPI. If the site has a public JSON API, point the commands at that instead of the HTML pages. If your definition needs logic, it is trying to become an adapter, and the answer is to improve the generic engine instead.
+
+A `search` verb deserves a moment's thought, because most documentation sites render search in the browser and hand oc an empty page. Check what the site actually ships, in this order:
+
+- **A server-rendered results page.** Point `open` at it, the way `pkg.go.dev` and Microsoft Learn's RSS endpoint do. Nothing else is needed.
+- **A public JSON endpoint behind the results page.** Use the `api` shape: `api` is the endpoint template, `page` the human URL to remember for the session, `results` the dot path to the list, `fields` the paths to each result's `title`, `url`, and `text`, and `total` the path to the count. `clis/developer.mozilla.org.json` is the model. The site's own ranking comes back as a numbered results page for a few hundred tokens.
+- **A static search index.** Sphinx sites (docs.python.org, most Read the Docs projects) publish `searchindex.js`; RDoc sites publish `js/search_index.js`; the Node.js API docs publish `all.json`. Set `sphinx`, `rdoc`, or `nodedoc` to the docs root and oc fetches the index once a day, ranks it locally, and prints only the result list. Any Sphinx or RDoc site works with no code.
+- **None of the above.** Fall back to DuckDuckGo with a baked-in filter: `"open": "https://html.duckduckgo.com/html/?q=site%3Aexample.org+{query}"`, as `rust`, `java`, `ts`, `php`, and `cpp` do. Say so in the README row ("search via DuckDuckGo") so nobody mistakes it for the site's own search.
+
+Adding a fifth search backend is a change to `src/`, not to a JSON file, and needs the same case as any other new code: a site that many agents reach for, an index or endpoint that a template cannot describe, and offline tests against a saved copy of the index.
 
 ## Reporting bugs
 

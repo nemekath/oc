@@ -118,11 +118,23 @@ test('the second wave of language docs resolves the same way', () => {
     resolveSite('rust', ['std', 'vec/struct.Vec']).url,
     'https://doc.rust-lang.org/std/vec/struct.Vec.html');
   assert.equal(
+    resolveSite('rust', ['search', 'Vec', 'retain']).url,
+    'https://html.duckduckgo.com/html/?q=site%3Adoc.rust-lang.org+Vec%20retain');
+  assert.equal(
     resolveSite('java', ['api', 'java.base/java/util/HashMap']).url,
     'https://docs.oracle.com/en/java/javase/26/docs/api/java.base/java/util/HashMap.html');
   assert.equal(
+    resolveSite('java', ['search', 'HashMap', 'computeIfAbsent']).url,
+    'https://html.duckduckgo.com/html/?q=site%3Adocs.oracle.com+javase+HashMap%20computeIfAbsent');
+  assert.equal(
     resolveSite('ts', ['handbook', '2/everyday-types']).url,
     'https://www.typescriptlang.org/docs/handbook/2/everyday-types.html');
+  assert.equal(
+    resolveSite('ts', ['search', 'satisfies']).url,
+    'https://html.duckduckgo.com/html/?q=site%3Atypescriptlang.org+satisfies');
+  assert.equal(
+    resolveSite('php', ['search', 'array', 'functions']).url,
+    'https://html.duckduckgo.com/html/?q=site%3Aphp.net+array%20functions');
   assert.equal(
     resolveSite('learn', ['dotnet', 'system.string']).url,
     'https://learn.microsoft.com/en-us/dotnet/api/system.string');
