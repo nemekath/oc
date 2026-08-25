@@ -1,0 +1,7 @@
+{
+  "domain": "docs.ruby-lang.org",
+  "commands": {
+    "class": { "open": "https://docs.ruby-lang.org/en/3.4/{class}.html", "args": ["class"] },
+    "search": { "rdoc": "https://docs.ruby-lang.org/en/3.4/", "args": ["query"] }
+  }
+}

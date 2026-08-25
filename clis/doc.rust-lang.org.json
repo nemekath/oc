@@ -1,0 +1,8 @@
+{
+  "domain": "doc.rust-lang.org",
+  "commands": {
+    "std": { "open": "https://doc.rust-lang.org/std/{path}.html", "args": ["path"] },
+    "doc": { "open": "https://doc.rust-lang.org/{path}.html", "args": ["path"] },
+    "search": { "open": "https://html.duckduckgo.com/html/?q=site%3Adoc.rust-lang.org+{query}", "args": ["query"] }
+  }
+}

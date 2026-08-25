@@ -4,6 +4,7 @@
     "azure": { "open": "https://learn.microsoft.com/en-us/azure/{page}", "args": ["page"] },
     "doc": { "open": "https://learn.microsoft.com/en-us/{path}", "args": ["path"] },
     "cli": { "open": "https://learn.microsoft.com/en-us/cli/azure/{command}", "args": ["command"] },
+    "dotnet": { "open": "https://learn.microsoft.com/en-us/dotnet/api/{api}", "args": ["api"] },
     "search": { "open": "https://learn.microsoft.com/api/search/rss?search={query}&locale=en-us", "args": ["query"] }
   }
 }

@@ -1,0 +1,8 @@
+{
+  "domain": "php.net",
+  "commands": {
+    "fn": { "open": "https://www.php.net/manual-lookup.php?pattern={name}", "args": ["name"] },
+    "doc": { "open": "https://www.php.net/manual/en/{path}.php", "args": ["path"] },
+    "search": { "open": "https://html.duckduckgo.com/html/?q=site%3Aphp.net+{query}", "args": ["query"] }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "domain": "en.cppreference.com",
+  "commands": {
+    "cpp": { "open": "https://en.cppreference.com/cpp/{path}", "args": ["path"] },
+    "c": { "open": "https://en.cppreference.com/c/{path}", "args": ["path"] },
+    "search": { "open": "https://html.duckduckgo.com/html/?q=site%3Aen.cppreference.com+{query}", "args": ["query"] }
+  }
+}

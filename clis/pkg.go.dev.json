@@ -1,0 +1,7 @@
+{
+  "domain": "pkg.go.dev",
+  "commands": {
+    "pkg": { "open": "https://pkg.go.dev/{path}", "args": ["path"] },
+    "search": { "open": "https://pkg.go.dev/search?q={query}", "args": ["query"] }
+  }
+}

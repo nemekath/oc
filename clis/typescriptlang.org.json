@@ -1,0 +1,7 @@
+{
+  "domain": "typescriptlang.org",
+  "commands": {
+    "handbook": { "open": "https://www.typescriptlang.org/docs/handbook/{page}.html", "args": ["page"] },
+    "search": { "open": "https://html.duckduckgo.com/html/?q=site%3Atypescriptlang.org+{query}", "args": ["query"] }
+  }
+}

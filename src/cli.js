@@ -5,6 +5,10 @@ import { fetchPage } from './fetch.js';
 import { distill, toMarkdown, toHTML } from './distill.js';
 import { render, estimateTokens, contentTokens, contentFailure, MIN_CONTENT } from './render.js';
 import { resolveSite, listSites } from './sites.js';
+import { sphinxSearch } from './sphinx.js';
+import { nodeSearch } from './nodedocs.js';
+import { rdocSearch } from './rdoc.js';
+import { apiSearch } from './apisearch.js';
 import * as act from './act.js';
 import { DEFAULT_SESSION, assertSafeName, clearSession, loadSession, saveSession, sessionFromPage } from './session.js';
 import { authFailure, sessionExpiredMessage } from './auth.js';
@@ -170,11 +174,18 @@ async function main() {
   // A first word that is not a command may still be a site oc ships a
   // definition for, and a shortcut is only ever a URL, so it resolves to one
   // here and the rest of this function never learns it was not typed.
+  let search = null;
   if (!COMMANDS.has(command)) {
     const site = resolveSite(command, args);
     if (!site) throw new Error(`unknown command '${command}', run oc --help`);
-    args = [site.url];
-    command = 'open';
+    // Only a search shape resolves with a query; a URL shape never has one.
+    if (site.query != null) {
+      search = site;
+      command = 'search';
+    } else {
+      args = [site.url];
+      command = 'open';
+    }
   }
 
   const sessionName = assertSafeName(values.session || DEFAULT_SESSION);
@@ -318,6 +329,33 @@ async function main() {
         console.error(`~${stats.tokens} tokens, ${stats.rendered}/${stats.blocks} blocks rendered, ${cost}; ${resources()}`);
       }
       if (failure) noContent(finalUrl, failure);
+      return;
+    }
+    case 'search': {
+      // A search oc runs itself: a site's static index or docs corpus is
+      // fetched (or read back from its day cache) and ranked here, a JSON
+      // search API is asked directly. Either way the result list rides the
+      // exact `open` path: distilled, rendered, remembered, so `do <n>`
+      // follows a result. Only the list is ever printed; the index, corpus,
+      // and response stay out of context.
+      const t0 = performance.now();
+      const local = { sphinx: sphinxSearch, nodedoc: nodeSearch, rdoc: rdocSearch };
+      const kind = Object.keys(local).find((k) => search[k]);
+      const { url, html, via } = kind
+        ? await local[kind](search[kind], search.query)
+        : await apiSearch(search.api, search.query);
+      const page = distill(html, url);
+      if (values.json) {
+        remember(page, sessionName);
+        console.log(JSON.stringify({ ...page, empty: false }));
+        return;
+      }
+      const { text, stats } = render(page, { budget: asked || 500 });
+      remember(page, sessionName, stats.next);
+      console.log(text);
+      if (verbose) {
+        console.error(`~${stats.tokens} tokens, results via ${via}, ${Math.round(performance.now() - t0)}ms`);
+      }
       return;
     }
     case 'read': return console.log(act.read(Number(args[0]), { session: sessionName, budget: asked || 2000 }));
