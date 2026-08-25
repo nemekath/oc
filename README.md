@@ -166,34 +166,33 @@ Want a website on that list? Open a pull request, or an issue naming the site; s
 
 ## Benchmarks
 
-Full methodology, per-task numbers, and other agents/models live in [only-cli/benchmarks](https://github.com/only-cli/benchmarks). The short version, measured with oc 0.5.0 on 2026-08-24 against live sites across a news front page, a Reddit discussion, a search results page, a stock quote, three cloud CLI reference pages, the Python, MDN, and Node.js references, and more:
+Full methodology, per-task rows, and the Codex runs live in [only-cli/benchmarks](https://github.com/only-cli/benchmarks). The short version, measured with oc 0.5.0 on 2026-08-24 against live sites.
 
-| method | tokens for 15 real pages | notes |
+**Tokens per page, no model in the loop.** Fifteen real pages: a news front page, a Reddit discussion, search results, a stock quote, three cloud CLI references, the Python, MDN, and Node.js references, and more.
+
+| method | tokens for 15 pages | notes |
 | --- | ---: | --- |
-| `oc open` | 10,936 | only method that returned real content on every page |
-| Jina Reader | 148,479 | blocked on both Reddit pages, failed the LinkedIn and Yahoo Finance pages |
+| `oc open` | 10,936 | the only reader that returned real content on every page |
+| Jina Reader | 148,479 | both Reddit results are block pages; failed LinkedIn and Yahoo Finance outright |
+| Playwright MCP | 531,335 | accessibility snapshots; both Reddit snapshots are block pages |
 | raw HTML fetch | 1,552,491 | the stock quote page alone is 399,881 tokens |
 
-Read cost is one thing, but what an agent actually spends is another, so a
-second suite runs whole tasks end to end in Claude Code and compares `oc`
-against the tools the agent already has. Five Wikipedia lookups, one tool per
-run, Sonnet driving:
+oc's budget keeps every page near 500 tokens however much it weighs: the Yahoo Finance quote is 399,881 tokens raw and 456 through oc, Node's `fs` reference 273,820 against 475.
 
-| tool | answered correctly | input tokens | cost | turns | avg time |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `oc wiki` | 5/5 | 5,535 | $0.27 | 22 | 11s |
-| built-in `WebFetch` | 5/5 | 128,792 | $0.37 | 25 | 14s |
-| built-in `WebSearch` | 5/5 | 160,431 | $0.52 | 27 | 22s |
+**Whole tasks against the agent's built-in web tools.** Read cost is one thing, what an agent actually spends is another, so a second set of suites runs full lookups end to end in Claude Code (`claude-sonnet-5`), one tool per run, and grades every answer. Five Wikipedia lookups and eleven language documentation lookups:
 
-All three got every answer right, so this is a cost result, not an accuracy one.
-Input tokens are the fresh context each tool put in front of the model, which is
-the number the page size drives; totals including cache reads sit closer together
-because the agent's own prompt dominates them. The spread widens with the page:
-`oc` cost 5.7x less than `WebFetch` on a short stub and 35x less on a long
-article, because the 500 token budget makes it flat at about 1,100 tokens per
-page while a full fetch pays for whatever the page weighs. `WebSearch` was given
-only the question, not the article URL, which is the honest way to use it and
-part of why it costs the most.
+| suite | tool | correct | input tokens | cost | avg time |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Wikipedia | `oc wiki` | 5/5 | 5,535 | $0.27 | 11s |
+| | built-in `WebFetch` | 5/5 | 128,792 | $0.37 | 14s |
+| | built-in `WebSearch` | 5/5 | 160,431 | $0.52 | 22s |
+| Language docs | `oc docs` | 11/11 | 12,965 | $0.57 | 9s |
+| | built-in `WebFetch` | 10/11 | 203,489 | $0.74 | 11s |
+| | built-in `WebSearch` | 11/11 | 209,782 | $0.89 | 15s |
+
+Input tokens are the fresh context each tool put in front of the model, which is the number the page size drives; totals including cache reads sit closer together because the agent's own prompt dominates them. oc stays flat at roughly 1,100 to 1,200 tokens per task, while `WebFetch` pays for whatever the page weighs, from 5.7x more on a short Wikipedia stub to 35x more on the German Berlin article. `WebFetch`'s one wrong answer is an access result: cppreference returns 403 to it, while oc's Chrome impersonation reads the same page. `WebSearch` was given only the question, never the URL, which is the honest way to use it and part of why it costs the most.
+
+The same suites through Codex (`gpt-5.6-sol`) split. On Wikipedia, `oc wiki` was cheaper and also right where Codex's own search quoted a stale Berlin population. On the docs lookups Codex's search won by 16%: those facts are already in its snippets, and it answered most tasks in two turns without opening a page.
 
 ## Status
 
