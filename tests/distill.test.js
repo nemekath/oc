@@ -549,8 +549,10 @@ test('a link-list page counts as content even with no prose on it', () => {
 
 test('every fixture page reads as content, none as a failed render', () => {
   // Feeds, a JSON API, and a YouTube watch page are all thin by design, which
-  // is exactly where this check must not cry wolf.
+  // is exactly where this check must not cry wolf. login.html is an auth-gate
+  // fixture, not a page that should distill as content.
   for (const name of readdirSync(PAGES)) {
+    if (name === 'login.html') continue;
     const raw = readFileSync(PAGES + name, 'utf8');
     const page = distill(raw, `https://api.example.test/2.3/search/advanced?site=fixture&f=${name}`);
     assert.equal(contentFailure(contentTokens(page), estimateTokens(raw)), null, name);

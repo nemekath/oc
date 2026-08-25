@@ -13,6 +13,8 @@ import https from 'node:https';
 import net from 'node:net';
 import tls from 'node:tls';
 
+import { getSetCookieHeaders } from './cookies.js';
+
 // The fetch fallback can't fake a TLS fingerprint like impers does, but it
 // should at least send the same Chrome identity in its headers.
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36';
@@ -330,6 +332,14 @@ function wrapNodeResponse(res, url) {
       if (v == null) return null;
       return Array.isArray(v) ? v.join(', ') : v;
     },
+    // Node keeps Set-Cookie as an array of raw values. Expose it unjoined so
+    // the cookie jar reads each header intact: a comma in an Expires date
+    // makes the joined form ambiguous to split back apart.
+    getSetCookie() {
+      const v = res.headers['set-cookie'];
+      if (v == null) return [];
+      return Array.isArray(v) ? v : [v];
+    },
   };
   const text = () => new Promise((resolve, reject) => {
     const chunks = [];
@@ -430,7 +440,9 @@ function httpsViaConnect(target, proxy, headers, tlsOpts = {}) {
       // tls.connect already opened the tunnel. https.request would wrap TLS
       // again, and the origin would see a second ClientHello as garbage.
       // SNI is a hostname; an IP literal is only used for the cert check.
-      const hostname = target.hostname;
+      // URL.hostname keeps the brackets around an IPv6 literal ("[::1]"), which
+      // tls.connect would treat as a DNS name; strip them like assertSafeTarget.
+      const hostname = target.hostname.replace(/^\[|\]$/g, '');
       const tlsSocket = tls.connect({
         socket,
         host: hostname,
@@ -479,15 +491,16 @@ export function proxyGet(url, proxy, headers = {}, tlsOpts = {}) {
 /**
  * Fetch a page.
  * @param {string} url - with or without a scheme, https is assumed
+ * @param {{ jar?: { cookieHeaderFor(url: string): string|undefined, storeFromResponse(url: string, headers: string[]): void } }} [opts]
  * @returns {Promise<{url: string, html: string, status: number, via: string}>}
  *   final URL after redirects, the body, the HTTP status, and which client
  *   identity got the page (impers:chrome, impers:firefox, or fetch)
  */
-export async function fetchPage(url) {
+export async function fetchPage(url, { jar } = {}) {
   const target = /^https?:\/\//i.test(url) ? url : `https://${url}`;
   await assertSafeTarget(target);
   const impers = await loadImpers();
-  return impers ? viaImpers(impers, target) : viaFetch(target);
+  return impers ? viaImpers(impers, target, jar) : viaFetch(target, jar);
 }
 
 /**
@@ -504,11 +517,12 @@ export async function fetchPage(url) {
  * @param {string} start
  * @returns {Promise<{res: any, url: string}>} the first non-redirect response
  */
-export async function followRedirects(get, start) {
+export async function followRedirects(get, start, { onResponse } = {}) {
   let current = start;
   for (let i = 0; ; i++) {
     if (i > MAX_REDIRECTS) throw new Error(`too many redirects for ${start}`);
     const res = await get(current);
+    onResponse?.(current, res);
     const status = res.status ?? res.statusCode ?? 0;
     const location = res.headers.get('location');
     if (status >= 300 && status < 400 && location) {
@@ -526,17 +540,38 @@ const FETCH_HEADERS = {
   'accept-language': 'en-US,en;q=0.9',
 };
 
-async function viaImpers(impers, target) {
+function mergeHeaders(base, extra) {
+  return extra ? { ...base, ...extra } : base;
+}
+
+function jarHeaders(jar, url, base) {
+  if (!jar) return base;
+  const cookie = jar.cookieHeaderFor(url);
+  return cookie ? mergeHeaders(base, { cookie }) : base;
+}
+
+function captureSetCookie(jar, url, res) {
+  if (!jar) return;
+  jar.storeFromResponse(url, getSetCookieHeaders(res));
+}
+
+async function viaImpers(impers, target, jar) {
   // Some sites (Reddit) 403 the chrome fingerprint but accept firefox, so a
   // blocked first attempt gets one cheap retry with a second identity.
   const asking = (impersonate) => (url) =>
-    impers.get(url, { impersonate, allowRedirects: false, proxy: resolveProxy(url) ?? '' });
+    impers.get(url, {
+      impersonate,
+      allowRedirects: false,
+      proxy: resolveProxy(url) ?? '',
+      headers: jarHeaders(jar, url, {}),
+    });
+  const onResponse = (url, res) => captureSetCookie(jar, url, res);
   let via = 'impers:chrome';
-  let { res } = await followRedirects(asking('chrome'), target);
+  let { res } = await followRedirects(asking('chrome'), target, { onResponse });
   let status = res.status ?? res.statusCode ?? 0;
   if (status >= 400) {
     via = 'impers:firefox';
-    ({ res } = await followRedirects(asking('firefox'), target));
+    ({ res } = await followRedirects(asking('firefox'), target, { onResponse }));
     status = res.status ?? res.statusCode ?? 0;
   }
   if (status >= 400) throw new Error(`fetch failed: ${status} for ${target}`);
@@ -550,13 +585,16 @@ async function viaImpers(impers, target) {
   return { url: res.url ?? target, html, status, via };
 }
 
-async function viaFetch(target) {
-  const { res, url: current } = await followRedirects((url) => {
+async function viaFetch(target, jar) {
+  const get = (url) => {
     const proxy = resolveProxy(url);
+    const headers = jarHeaders(jar, url, FETCH_HEADERS);
     return proxy
-      ? proxyGet(url, proxy, FETCH_HEADERS)
-      : fetch(url, { redirect: 'manual', headers: FETCH_HEADERS });
-  }, target);
+      ? proxyGet(url, proxy, headers)
+      : fetch(url, { redirect: 'manual', headers });
+  };
+  const onResponse = (url, res) => captureSetCookie(jar, url, res);
+  const { res, url: current } = await followRedirects(get, target, { onResponse });
   if (!res.ok) {
     throw new Error(`fetch failed: ${res.status} ${res.statusText} for ${current}`);
   }

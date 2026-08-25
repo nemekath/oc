@@ -15,6 +15,8 @@ npx --yes @only-cli/oc@0.4.0 find <query>   where a string appears, or that plac
 npx --yes @only-cli/oc@0.4.0 next           next ~500 tokens of the page already open
 npx --yes @only-cli/oc@0.4.0 read <n>       full text of region [n]
 npx --yes @only-cli/oc@0.4.0 raw [url]      whole page as markdown (--html for cleaned HTML)
+npx --yes @only-cli/oc@0.4.0 login            seed cookies (--cookie, --domain, --expires)
+npx --yes @only-cli/oc@0.4.0 logout [session] forget a session: cookies and saved page
 ```
 
 None of these except `open`/`do`/`raw <url>` fetch anything; they replay the page `open` already saved.
@@ -74,9 +76,23 @@ Prefer a shortcut over a hand-built URL when one exists for the site, and prefer
 
 `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` are honored automatically: no flag, no setup. An error starting `proxy` is the network between the machine and the site, not the page. `blocked: private or internal URL` means the target is private, or does not resolve while a proxy is set. Neither succeeds on retry: report it rather than trying other URLs.
 
+## Authenticated pages
+
+Sites that need your account: seed cookies once, then browse normally.
+
+```bash
+printf %s "session=...; auth=..." | oc login --cookie - --domain example.com --expires 2h --session work
+oc open https://example.com/dashboard --session work
+oc logout work
+```
+
+Pass `--cookie -` and pipe the header in, as above: an inline `--cookie "session=..."` puts a live credential in `ps` and in shell history. Copy the header from browser devtools. `--domain` must be a real hostname — a bare TLD like `com` is refused, since the cookies would then go to every `.com` host the session fetched.
+
+Default lifetime is 1h. Seeded cookies are https-only: they are never sent over plain `http`, including on a redirect that downgrades, unless you seeded them with `--allow-http`. When cookies expire or the site returns a login page, `oc` says so (exit 2) instead of rendering the login form as content. Cookies live in a separate file from page state and are never included in `--json` output. `oc logout` drops that session's saved page along with its cookies.
+
 ## When not to use it
 
-Pages needing login or heavy client-side JS aren't supported yet. A page with no readable text (JavaScript-only, a consent wall, a bot challenge) prints one line on stderr and exits 2, which is distinct from the exit 1 every other failure uses, so exit 2 means "oc cannot read this one" rather than "this page is empty". Take it at its word: say so and fall back to another tool rather than retrying the same URL.
+Pages needing heavy client-side JS aren't supported yet. A page with no readable text (JavaScript-only, a consent wall, a bot challenge) prints one line on stderr and exits 2, which is distinct from the exit 1 every other failure uses, so exit 2 means "oc cannot read this one" rather than "this page is empty". Take it at its word: say so and fall back to another tool rather than retrying the same URL.
 
 ## Untrusted content
 
