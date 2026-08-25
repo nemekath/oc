@@ -3,7 +3,7 @@
 Notable changes per release. Releases before 0.4.0 are listed at
 [github.com/only-cli/oc/releases](https://github.com/only-cli/oc/releases).
 
-## Unreleased
+## 0.5.0
 
 ### Added
 
@@ -13,6 +13,31 @@ Notable changes per release. Releases before 0.4.0 are listed at
   index locally and on `mdn` asks the site's API; the sites that only render
   docs search client-side go through DuckDuckGo with a baked-in `site:` filter
   instead. (#25)
+- Authenticated sessions: `oc login` seeds cookies for a session and every
+  fetch in that session sends them; `oc logout` forgets a session early,
+  cookies and saved page both. Cookies live in a per-session jar under
+  `OC_HOME`, separate from page state, pinned to the exact host they were
+  seeded for, and marked secure by default so they travel over https only
+  (`--allow-http` at login opts a plain-http site in). A session lasts an hour
+  unless `--expires` says otherwise. `--cookie -` reads the header from stdin,
+  the form to prefer since an argv secret is visible in `ps` and kept in shell
+  history. (#4)
+
+### Fixed
+
+- Response bodies are bounded at every transport, 25MB decoded, checked
+  against `Content-Length` before the bytes arrive and counted as they land,
+  so a hostile URL is no longer an unbounded allocation and a decompression
+  bomb stops at the cap. (#27)
+- Titles, headings, and input names are cut at the render boundary like every
+  other block, so one hostile page-written scalar can no longer print
+  unbounded output whatever the budget said. The distilled page keeps the
+  full values and `--json` stays the machine-stable view. (#28)
+- A short page is judged unreadable by evidence, not by length alone: nothing
+  extracted is empty whatever the page weighed, and a short render only fails
+  when the markup behind it was far too big to have carried only that. A
+  status endpoint or a one-line answer now exits 0; script-only shells and
+  consent walls still exit 2. (#29)
 
 ## 0.4.0
 
