@@ -29,35 +29,6 @@ npm install -g @only-cli/oc
 
 Requires Node 20+. Requests impersonate Chrome via [impers](https://github.com/lexiforest/impers); falls back to native fetch if impers is unavailable.
 
-### Proxies
-
-Outbound fetches honor the usual environment variables, in upper or lower case, with nothing to pass on the command line:
-
-```
-HTTP_PROXY=http://proxy.example:8080       # http:// targets
-HTTPS_PROXY=http://proxy.example:8080      # https:// targets, tunneled with CONNECT
-NO_PROXY=internal.example,*.corp.example   # reached directly instead
-```
-
-An `https://` target prefers `HTTPS_PROXY` and falls back to `HTTP_PROXY`; an `http://` target uses `HTTP_PROXY` only. A value with no scheme is read as `http://`, so `proxy.example:8080` works. Only HTTP and HTTPS proxies are supported, and another scheme such as `socks5://` is refused by name rather than silently ignored.
-
-Credentials in the proxy URL are sent as `Proxy-Authorization` to the proxy and to nothing else, including across redirects:
-
-```
-HTTPS_PROXY=http://user:pass@proxy.example:8080 oc open https://example.com
-```
-
-`NO_PROXY` accepts an exact host, a `.suffix` or `*.suffix` pattern, a `host:port` entry, a CIDR block, and `*` for everything.
-
-An `https://` page is tunneled with CONNECT and its certificate is verified the same way it would be without a proxy, so a proxy in the path cannot read or rewrite the page.
-
-Two limits are worth knowing:
-
-- oc does not read `ALL_PROXY`. The impers transport is libcurl underneath and reads it on its own, so a request oc treats as direct can still leave through an `ALL_PROXY`. The same holds for the `*.suffix`, `host:port`, and CIDR forms of `NO_PROXY`, which libcurl does not parse. Set `HTTP_PROXY` and `HTTPS_PROXY` explicitly and keep `NO_PROXY` to plain host and suffix entries when the two need to agree.
-- An IPv6 literal target over HTTPS does not currently work through a proxy.
-
-Private and internal addresses are refused whether or not a proxy is set. With a proxy configured, a hostname that does not resolve locally is refused too, because the proxy would otherwise resolve it on a network oc cannot see. A name that resolves publicly for oc and internally for the proxy (split horizon DNS) is not something oc can detect, so a proxy is trusted to enforce its own egress policy.
-
 ### Agent skill
 
 Install the [web-browsing-cli skill](https://www.skills.sh/only-cli/oc/web-browsing-cli) for Claude Code, Cursor, Codex, Copilot, and other compatible agents:
@@ -103,30 +74,6 @@ oc logout [session]    forget a session: cookies and saved page
 
 Flags: `--budget <tokens>` (default 500), `--json`, `--html` (raw as cleaned HTML), `--session <name>`, `--verbose`/`-v` (metrics on stderr, or export `OC_VERBOSE=1`).
 
-### Authenticated sessions
-
-Pages behind a login need cookies. Seed them once per session, then browse normally:
-
-```bash
-printf %s "session=...; auth=..." | oc login --cookie - --domain example.com --expires 2h --session work
-oc open https://example.com/dashboard --session work
-oc logout work
-```
-
-Prefer `--cookie -`, which reads the header from stdin. The flag also takes the header inline (`--cookie "session=..."`), but an argument is a live credential in `ps` for as long as `oc` runs and in your shell history afterwards.
-
-Copy the `Cookie` header from your browser's devtools (Application → Cookies, or the Network tab on a request); a leading `Cookie:` is stripped for you. `--domain` is the site hostname those cookies belong to, and it has to be a real hostname: a bare TLD like `com` is refused, because the match is a suffix match and those cookies would go to every `.com` host the session ever fetched. Cookie names and values are checked at login too, so a stray control character fails there rather than deep inside the HTTP client.
-
-Seeded cookies are https-only. They almost always come from an https browser session, so `oc` marks them secure and never sends them over plain `http`, including on a hop an `https` page redirects into, where you never typed the downgrade. A site that really is http-only needs `--allow-http` at login. Cookies a site sets over https are pinned the same way.
-
-Cookies live in a separate sidecar file (`<session>.cookies.json`) under `~/.only-cli/sessions/`, mode `0600`, not in the page-state JSON and never in `--json` output. The default lifetime is one hour (`--expires 1h`), and a jar holds at most 50 cookies so a page cannot bloat it. When cookies expire or the site returns a login page, `oc` says so plainly (exit 2) instead of distilling the login form as content.
-
-`oc logout` forgets the whole session, not just its cookies: a page saved under that name can hold the distilled text of something only the login could reach, so the snapshot goes with the jar.
-
-`oc open` remembers the page it rendered in a JSON file per session under `~/.only-cli` (override with `OC_HOME`), so `oc do 3` follows `[3]` without the agent ever handling a URL. A result title on a search page is a link, so `oc do` on it opens the result rather than repeating the title. Pages longer than the budget say what they left out; `oc find`, `oc read <n>`, and `oc next` read the rest without refetching the page, and a `find` with a single match prints that region instead of the number to read it with. The budget is a target rather than a hard cap: a page that would only run a little long is printed whole rather than cut, since one extra tool call costs far more than the tokens it would have saved.
-
-When a page comes back with no readable text (JavaScript-only, a consent wall, a bot challenge), `oc` says so in one line on stderr and exits 2 instead of printing a title and calling it a render. That is a different exit code from every other failure, and `--json` carries the same verdict as an `empty` field, so an agent can tell "this page has nothing on it" from "oc could not read this page" and pay for a browser only when it is worth it.
-
 ## Supported websites
 
 Works on any mostly-static site with no per-site setup: news sites, blogs, documentation, forums, search engines. A JSON API is a page here too: `oc open` on an endpoint that answers with JSON renders one numbered item per record, keeps the fields that actually differ between items, and says once what every item shares. On top of that, `clis/` ships tuned shortcuts, so `oc hn item 4711` or `oc gh repo only-cli oc` gets there without the agent knowing how that site spells its URLs. Name the site by its short name, its bare name, or its domain (`oc hn`, `oc ycombinator`, `oc news.ycombinator.com`), and `oc sites` prints the whole list with its verbs:
@@ -164,9 +111,71 @@ A few of these (X, Stack Overflow, YouTube, Microsoft Learn search) read pages t
 
 Want a website on that list? Open a pull request, or an issue naming the site; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Features
+
+### Authenticated sessions
+
+Pages behind a login need cookies. Seed them once per session, then browse normally:
+
+```bash
+printf %s "session=...; auth=..." | oc login --cookie - --domain example.com --expires 2h --session work
+oc open https://example.com/dashboard --session work
+oc logout work
+```
+
+Prefer `--cookie -`, which reads the header from stdin. The flag also takes the header inline (`--cookie "session=..."`), but an argument is a live credential in `ps` for as long as `oc` runs and in your shell history afterwards.
+
+Copy the `Cookie` header from your browser's devtools (Application → Cookies, or the Network tab on a request); a leading `Cookie:` is stripped for you. `--domain` is the site hostname those cookies belong to, and it has to be a real hostname: a bare TLD like `com` is refused, because the match is a suffix match and those cookies would go to every `.com` host the session ever fetched. Cookie names and values are checked at login too, so a stray control character fails there rather than deep inside the HTTP client.
+
+Seeded cookies are https-only. They almost always come from an https browser session, so `oc` marks them secure and never sends them over plain `http`, including on a hop an `https` page redirects into, where you never typed the downgrade. A site that really is http-only needs `--allow-http` at login. Cookies a site sets over https are pinned the same way.
+
+Cookies live in a separate sidecar file (`<session>.cookies.json`) under `~/.only-cli/sessions/`, mode `0600`, not in the page-state JSON and never in `--json` output. The default lifetime is one hour (`--expires 1h`), and a jar holds at most 50 cookies so a page cannot bloat it. When cookies expire or the site returns a login page, `oc` says so plainly (exit 2) instead of distilling the login form as content.
+
+`oc logout` forgets the whole session, not just its cookies: a page saved under that name can hold the distilled text of something only the login could reach, so the snapshot goes with the jar.
+
+`oc open` remembers the page it rendered in a JSON file per session under `~/.only-cli` (override with `OC_HOME`), so `oc do 3` follows `[3]` without the agent ever handling a URL. A result title on a search page is a link, so `oc do` on it opens the result rather than repeating the title. Pages longer than the budget say what they left out; `oc find`, `oc read <n>`, and `oc next` read the rest without refetching the page, and a `find` with a single match prints that region instead of the number to read it with. The budget is a target rather than a hard cap: a page that would only run a little long is printed whole rather than cut, since one extra tool call costs far more than the tokens it would have saved.
+
+When a page comes back with no readable text (JavaScript-only, a consent wall, a bot challenge), `oc` says so in one line on stderr and exits 2 instead of printing a title and calling it a render. That is a different exit code from every other failure, and `--json` carries the same verdict as an `empty` field, so an agent can tell "this page has nothing on it" from "oc could not read this page" and pay for a browser only when it is worth it.
+
+### Proxies
+
+Outbound fetches honor the usual environment variables, in upper or lower case, with nothing to pass on the command line:
+
+```
+HTTP_PROXY=http://proxy.example:8080       # http:// targets
+HTTPS_PROXY=http://proxy.example:8080      # https:// targets, tunneled with CONNECT
+NO_PROXY=internal.example,*.corp.example   # reached directly instead
+```
+
+An `https://` target prefers `HTTPS_PROXY` and falls back to `HTTP_PROXY`; an `http://` target uses `HTTP_PROXY` only. A value with no scheme is read as `http://`, so `proxy.example:8080` works. Only HTTP and HTTPS proxies are supported, and another scheme such as `socks5://` is refused by name rather than silently ignored.
+
+Credentials in the proxy URL are sent as `Proxy-Authorization` to the proxy and to nothing else, including across redirects:
+
+```
+HTTPS_PROXY=http://user:pass@proxy.example:8080 oc open https://example.com
+```
+
+`NO_PROXY` accepts an exact host, a `.suffix` or `*.suffix` pattern, a `host:port` entry, a CIDR block, and `*` for everything.
+
+An `https://` page is tunneled with CONNECT and its certificate is verified the same way it would be without a proxy, so a proxy in the path cannot read or rewrite the page.
+
+Two limits are worth knowing:
+
+- oc does not read `ALL_PROXY`. The impers transport is libcurl underneath and reads it on its own, so a request oc treats as direct can still leave through an `ALL_PROXY`. The same holds for the `*.suffix`, `host:port`, and CIDR forms of `NO_PROXY`, which libcurl does not parse. Set `HTTP_PROXY` and `HTTPS_PROXY` explicitly and keep `NO_PROXY` to plain host and suffix entries when the two need to agree.
+- An IPv6 literal target over HTTPS does not currently work through a proxy.
+
+Private and internal addresses are refused whether or not a proxy is set. With a proxy configured, a hostname that does not resolve locally is refused too, because the proxy would otherwise resolve it on a network oc cannot see. A name that resolves publicly for oc and internally for the proxy (split horizon DNS) is not something oc can detect, so a proxy is trusted to enforce its own egress policy.
+
 ## Benchmarks
 
-Full methodology, per-task rows, and the Codex runs live in [only-cli/benchmarks](https://github.com/only-cli/benchmarks). The short version, measured with oc 0.5.0 on 2026-08-24 against live sites.
+Full methodology, per-task rows, and the Codex runs live in [only-cli/benchmarks](https://github.com/only-cli/benchmarks). Where things stand (oc 0.5.0, August 2026, live sites):
+
+- **142x fewer tokens than raw HTML** across 15 real pages: 10,936 against 1,552,491. 14x fewer than Jina Reader, 49x fewer than Playwright MCP's accessibility snapshot.
+- **The only reader that returned real content on every page.** Reddit blocked curl, Jina Reader and Playwright; Jina also failed LinkedIn and Yahoo Finance; DuckDuckGo blocked lynx. oc's Chrome impersonation read all fifteen.
+- **Half the cost of Claude Code's built-in `WebSearch`** on Wikipedia lookups: $0.27 against $0.52 for five questions, both 5/5 correct, on 29x less fresh input.
+- **23% cheaper than `WebFetch` and 35% cheaper than `WebSearch`** on eleven language docs lookups, at equal or better accuracy.
+
+The tables behind those numbers:
 
 **Tokens per page, no model in the loop.** Fifteen real pages: a news front page, a Reddit discussion, search results, a stock quote, three cloud CLI references, the Python, MDN, and Node.js references, and more.
 
